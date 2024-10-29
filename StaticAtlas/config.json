@@ -1,0 +1,15 @@
+{
+  "epochs": 100,
+  "epoch_decay_steps": 400,
+  "epoch_loss_fading": 200,
+  "alpha": 0.1,
+  "lambda": 500,
+  "learning_rate": 0.001,
+  "batch_size": 1,
+  "val_interval": 10,
+  "precision" : "fp32",
+  "size": [175, 175, 175],
+  "spacing": [1, 1, 1],
+  "binarize": 0,
+  "num_classes": 20
+}
