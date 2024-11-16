@@ -68,6 +68,64 @@ class NCC(nn.Module):
         return -torch.mean(cc)
 
 
+class BendingEnergyLoss(nn.Module):
+    """
+    regularization loss of bending energy of a 3d deformation field
+    """
+
+    def __init__(self, norm='L2', spacing=(1, 1, 1), normalize=True):
+        super(BendingEnergyLoss, self).__init__()
+        self.norm = norm
+        self.spacing = torch.tensor(spacing).float()
+        self.normalize = normalize
+        if self.normalize:
+            self.spacing /= self.spacing.min()
+
+    def forward(self, input):
+        """
+        :param norm: 'L1' or 'L2'
+        :param input: Nx3xDxHxW
+        :return:
+        """
+        self.spacing = self.spacing.to(input.device)
+        spatial_dims = torch.tensor(input.shape[2:]).float().to(input.device)
+        if self.normalize:
+            spatial_dims /= spatial_dims.min()
+
+        # according to
+        # f''(x) = [f(x+h) + f(x-h) - 2f(x)] / h^2
+        # f_{x, y}(x, y) = [df(x+h, y+k) + df(x-h, y-k) - df(x+h, y-k) - df(x-h, y+k)] / 2hk
+
+        ddx = torch.abs(input[:, :, 2:, 1:-1, 1:-1] + input[:, :, :-2, 1:-1, 1:-1] - 2 * input[:, :, 1:-1, 1:-1, 1:-1])\
+                 .view(input.shape[0], input.shape[1], -1)
+
+        ddy = torch.abs(input[:, :, 1:-1, 2:, 1:-1] + input[:, :, 1:-1, :-2, 1:-1] - 2 * input[:, :, 1:-1, 1:-1, 1:-1]) \
+                 .view(input.shape[0], input.shape[1], -1)
+
+        ddz = torch.abs(input[:, :, 1:-1, 1:-1, 2:] + input[:, :, 1:-1, 1:-1, :-2] - 2 * input[:, :, 1:-1, 1:-1, 1:-1]) \
+                 .view(input.shape[0], input.shape[1], -1)
+
+        dxdy = torch.abs(input[:, :, 2:, 2:, 1:-1] + input[:, :, :-2, :-2, 1:-1] -
+                         input[:, :, 2:, :-2, 1:-1] - input[:, :, :-2, 2:, 1:-1]).view(input.shape[0], input.shape[1], -1)
+
+        dydz = torch.abs(input[:, :, 1:-1, 2:, 2:] + input[:, :, 1:-1, :-2, :-2] -
+                         input[:, :, 1:-1, 2:, :-2] - input[:, :, 1:-1, :-2, 2:]).view(input.shape[0], input.shape[1], -1)
+
+        dxdz = torch.abs(input[:, :, 2:, 1:-1, 2:] + input[:, :, :-2, 1:-1, :-2] -
+                         input[:, :, 2:, 1:-1, :-2] - input[:, :, :-2, 1:-1, 2:]).view(input.shape[0], input.shape[1], -1)
+
+
+        if self.norm == 'L2':
+            ddx = (ddx ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[0]**2)) ** 2
+            ddy = (ddy ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[1]**2)) ** 2
+            ddz = (ddz ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[2]**2)) ** 2
+            dxdy = (dxdy ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[0] * self.spacing[1])) ** 2
+            dydz = (dydz ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[1] * self.spacing[2])) ** 2
+            dxdz = (dxdz ** 2).mean(2) * (spatial_dims * self.spacing / (self.spacing[2] * self.spacing[0])) ** 2
+
+        d = (ddx.mean() + ddy.mean() + ddz.mean() + 2*dxdy.mean() + 2*dydz.mean() + 2*dxdz.mean()) / 9.0
+        return d
+
 class Grad3d:
     """
     3-D gradient loss.
