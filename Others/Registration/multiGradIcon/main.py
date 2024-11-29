@@ -65,15 +65,12 @@ def main(subject):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='MutliGradIcon Registration 3D Image Pair with pretrained network')
-    parser.add_argument('-t', '--target', help='Target / Reference Image', type=str, required=False,
-                        default="../data/t1-t36.00.nii.gz")
-    parser.add_argument('-s', '--source', help='Source / Moving Image', type=str, required=False,
-                        default="../data/t1-t21.00.nii.gz")
-    parser.add_argument('-tl', '--target_label', help='Target / Reference Image', type=str, required=False,
-                        default="../data/t1-t27.00.nii.gz")
-    parser.add_argument('-sl', '--source_label', help='Source / Moving Image', type=str, required=False,
-                        default="../data/t1-t23.00.nii.gz")
+    parser = argparse.ArgumentParser(description='MultiGradIcon Registration 3D Image Pair with pretrained network')
+
+    parser.add_argument('-s', '--source', help='Source image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t21.00.nii.gz")
+    parser.add_argument('-t', '--target', help='Target image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t36.00.nii.gz")
+    parser.add_argument('-sl', '--source_label', help='Source image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz")
+    parser.add_argument('-tl', '--target_label', help='Target image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t36.00_dhcp-19.nii.gz")
     args = parser.parse_args()
     print(args)
 
