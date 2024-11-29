@@ -169,7 +169,20 @@ def average_surface_distance(predictions, labels, num_classes, spacing=[1, 1, 1]
     return multi_class_score(one_class_average_surface_distance, predictions, labels, num_classes=num_classes)
 
 
-def dice_score(predictions, labels, num_classes):
+
+def dice_score(prediction, labels):
+    # Step 4: Compute intersection and union for each class
+    intersection = np.sum(prediction * labels, axis=(1, 2, 3))  # Shape: [nb_classes]
+    union = np.sum(prediction, axis=(1, 2, 3)) + np.sum(labels, axis=(1, 2, 3))  # Shape: [nb_classes]
+    # Step 5: Compute Dice score for each class
+    try:
+        dice = 2 * intersection / (union)
+    except ZeroDivisionError:
+        dice = 2 * intersection / (union) + 1e-6 # Avoid division by zero
+    return dice
+
+
+def dice_score_old(predictions, labels, num_classes):
     """ returns the dice score
 
     Args:
@@ -181,11 +194,9 @@ def dice_score(predictions, labels, num_classes):
 
     def one_class_dice(pred, lab):
         shape = pred.shape
-        p_flat = pred.view(shape[0], -1)
-        l_flat = lab.view(shape[0], -1)
-        true_positive = (p_flat * l_flat).sum()
+        true_positive = (pred * lab).sum()
         try:
-            dc = (2. * true_positive) / (p_flat.sum() + l_flat.sum())
+            dc = (2. * true_positive) / (pred.sum() + lab.sum())
         except ZeroDivisionError:
             ## NaN value ref: https://github.com/deepmind/surface-distance,
             dc = torch.tensor(np.NaN)

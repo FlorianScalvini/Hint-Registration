@@ -1,0 +1,36 @@
+{
+    "test":
+    {
+        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset_fused_dataset.csv",
+        "t0": 21,
+        "t1": 36,
+        "load": "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_3/reg_model_best.pth",
+        "load_mlp": "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_3/mlp_model_best.pth",
+        "save_path": "./Results/",
+        "logger": "log"
+    },
+
+    "model_reg":
+    {
+      "model" : "AttentionUnet",
+      "args" :
+      {
+          "spatial_dims": 3,
+          "in_channels": 2,
+          "out_channels": 3,
+          "channels": [8, 16, 32],
+          "strides": [2, 2]
+      }
+    },
+
+    "model_svf":
+      {
+        "model" : "mlp",
+        "args" :
+        {
+            "hidden_size": [1, 32, 32, 32, 32, 1],
+            "activation_layer": "ReLU",
+            "output_activation": "'ReLU"
+        }
+      }
+}

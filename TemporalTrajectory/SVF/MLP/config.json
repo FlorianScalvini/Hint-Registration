@@ -1,0 +1,44 @@
+{
+    "train":
+    {
+        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset_fused_dataset.csv",
+        "t0": 21,
+        "t1": 36,
+        "epochs": 5000,
+        "accumulate_grad_batches": 1,
+        "loss": "mse",
+        "lam_l": 1,
+        "lam_s": 10,
+        "lam_m": 0.001,
+        "lam_g": 0.01,
+        "load": "/home/florian/Documents/Programs/Hint-Registration/Registration/model_attention_unet_svf.pth",
+        "save": "model_test_10_inter_21_36",
+        "logger": "log",
+        "precision": 32,
+        "tensor-cores": false
+    },
+
+    "model_reg":
+    {
+      "model" : "AttentionUnet",
+      "args" :
+      {
+          "spatial_dims": 3,
+          "in_channels": 2,
+          "out_channels": 3,
+          "channels": [8, 16, 32],
+          "strides": [2, 2]
+      }
+    },
+
+    "model_svf":
+      {
+        "model" : "mlp",
+        "args" :
+        {
+            "hidden_size": [1, 32, 32, 32, 32, 1],
+            "activation_layer": "ReLU",
+            "output_activation": "LeakyReLU"
+        }
+      }
+}

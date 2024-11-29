@@ -25,8 +25,15 @@ def test(arguments):
 
     subjects = subjects_from_csv(arguments.csv_path, age=True, lambda_age=lambda x: (x - arguments.t0) / (arguments.t1 - arguments.t0))
     subjects_set = tio.SubjectsDataset(subjects, transform=tio.Compose(transforms=transforms))
-    template_t0 = subjects_set[0]
-    template_t1 = subjects_set[1]
+
+    template_t0 = None
+    template_t1 = None
+    for s in subjects_set:
+        if s.age == 0:
+            template_t0 = s
+        if s.age == 0.125:
+            template_t1 = s
+
 
     net = UniGradIconRegistrationWrapper().cuda().eval()
 
@@ -36,16 +43,16 @@ def test(arguments):
     with torch.no_grad():
         forward_flow, backward_flow = net(source_data, ref_data)
 
-    for i in range(len(subjects_set)):
-        target = subjects_set[i]
-        warped_source = net.wrap(source_data, forward_flow)
-        warped_source_label = net.wrap(source_data_label.float(), forward_flow)
+    for i in range(len(subjects_set) - 1):
+        target = subjects_set[i + 1]
+        warped_source = net.warp(source_data, forward_flow)
+        warped_source_label = net.warp(source_data_label.float(), forward_flow)
 
         inter_age = int(target.age * (32 - 24) + 24)
         img = normalize_to_0_1(warped_source[0].detach())
-        loggers.experiment.add_image("Wrapped Sagittal Plane", TF.rotate(img[:, 80, :, :], 90), inter_age)
-        loggers.experiment.add_image("Wrapped Coronal Plane", TF.rotate(img[:, :, 80, :], 90), inter_age)
-        loggers.experiment.add_image("Wrapped Axial Plane", TF.rotate(img[:, :, :, 80], 90), inter_age)
+        loggers.experiment.add_image("Wrapped Sagittal Plane", TF.rotate(img[:, 88, :, :], 90), inter_age)
+        loggers.experiment.add_image("Wrapped Coronal Plane", TF.rotate(img[:, :, 88, :], 90), inter_age)
+        loggers.experiment.add_image("Wrapped Axial Plane", TF.rotate(img[:, :, :, 88], 90), inter_age)
 
         dice = dice_score(torch.argmax(warped_source_label, dim=1),
                           torch.argmax(target.label.data.cuda(), dim=0), num_classes=20)
@@ -62,7 +69,7 @@ def test(arguments):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Registration 3D Longitudinal Images : Inference')
     parser.add_argument('-p', '--csv_path', help='csv file ', type=str, required=False,
-                        default="./dataset.csv")
+                        default="/home/florian/Documents/Programs/Hint-Registration/data/train_dataset.csv")
     parser.add_argument('--t0', help='Initial time (t0) in week', type=float, required=False, default=24)
     parser.add_argument('--t1', help='Final time (t1) in week', type=float, required=False, default=32)
     parser.add_argument('-o', '--output', help='Output filename', type=str, required=False, default="./save/")

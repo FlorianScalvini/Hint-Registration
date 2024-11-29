@@ -18,4 +18,4 @@ class UniGradIconRegistrationWrapper(RegistrationModule):
         return self.forward(source, target)
 
     def wrap(self, tensor: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
-        return compute_warped_image_multiNC(tensor, flow, super().model.spacing, 0, zero_boundary=True)
+        return compute_warped_image_multiNC(tensor, flow, self.model.spacing, 0, zero_boundary=True)
