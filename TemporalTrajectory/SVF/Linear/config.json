@@ -4,18 +4,20 @@
         "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
         "t0": 21,
         "t1": 36,
-        "epochs": 2000,
+        "epochs": 300,
         "accumulate_grad_batches": 1,
         "loss": "mse",
-        "lam_l": 1,
-        "lam_s": 1,
+        "lam_l": 0.5,
+        "lam_s": 0.1,
         "lam_m": 0.001,
-        "lam_g": 0.005,
+        "lam_g": 0.01,
+        "save": "model_new_inter_21_36",
+        "load": "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/old_train/linear_model_10_inter_21_36.pth",
         "logger": "log",
         "precision": 32,
         "tensor-cores": false,
         "num_classes" : 20,
-        "num_inter_by_epoch": 10
+        "inshape" : 128
     },
 
     "model_reg":
@@ -29,16 +31,5 @@
           "channels": [8, 16, 32],
           "strides": [2, 2]
       }
-    },
-
-    "model_svf":
-      {
-        "model" : "mlp",
-        "args" :
-        {
-            "hidden_size": [1, 8, 8, 8, 1],
-            "activation_layer": "ReLU",
-            "output_activation": ""
-        }
-      }
+    }
 }

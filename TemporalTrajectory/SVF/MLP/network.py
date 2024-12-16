@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.nn.init as init
-
+import torch
 
 class MLP(nn.Module):
     def __init__(self, hidden_size, activation_layer=nn.ReLU, output_activation=None):
@@ -17,7 +17,7 @@ class MLP(nn.Module):
         self._initialize_weights()
 
     def forward(self, x):
-        return self.model(x)
+        return torch.abs(self.model(x))
 
     def _initialize_weights(self):
         for layer in self.modules():

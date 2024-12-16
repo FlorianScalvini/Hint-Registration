@@ -1,28 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import json
 import torch
 import monai
 import argparse
 import torchio as tio
-import pytorch_lightning as pl
-from pytorch_lightning.strategies.ddp import DDPStrategy
-from dataset import PairwiseSubjectsDataset, RandomPairwiseSubjectsDataset
-from utils import config_dict_to_tensorboard
-from dataset import TripletSubjectDataset, RandomTripletSubjectDataset, TripletStaticAnchorsDataset, subjects_from_csv, WrappedSubjectDataset
-from utils import get_cuda_is_available_or_cpu, create_directory, get_model_from_string, get_activation_from_string
-from Registration import RegistrationModuleSVF
-from temporal_trajectory_mlp import TemporalTrajectoryMLPSVF
 from network import MLP
-import json
-import uuid
-# %% Lightning module
-import os
+import pytorch_lightning as pl
+from temporal_trajectory_mlp import TemporalTrajectoryMLPSVF, TemporalTrajectoryActiveLearningMLP
+from dataset import TripletSubjectDataset, RandomTripletSubjectDataset, TripletStaticAnchorsDataset, subjects_from_csv, WrappedSubjectDataset
+from utils import get_cuda_is_available_or_cpu, create_directory, get_model_from_string, get_activation_from_string, write_text_to_file, config_dict_to_markdown
+from Registration import RegistrationModuleSVF
+
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
-
-
-
 
 
 def train_main(config):
@@ -31,7 +24,8 @@ def train_main(config):
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128)
+        tio.Resize(128),
+        tio.OneHot(20)
     ])
 
     config_train = config['train']
@@ -41,23 +35,20 @@ def train_main(config):
     # get the spatial dimension of the data (3D)
     dataset = WrappedSubjectDataset(dataset_path=config_train['csv_path'], transform=train_transform, lambda_age=lambda x: (x - config_train['t0']) / (config_train['t1'] - config_train['t0']))
     loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8, persistent_workers=True)
-
-    ## Config model
-    # get the spatial dimension of the data (3D)
     in_shape = dataset.dataset[0]['image'][tio.DATA].shape[1:]
-
     try:
         mlp_model = MLP(hidden_size=config['model_svf']['args']['hidden_size'],
                         activation_layer=get_activation_from_string(config['model_svf']['args']['activation_layer']),
                         output_activation=get_activation_from_string(config['model_svf']['args']['output_activation']))
-
+        if "load_mlp" in config_train and config_train['load_mlp'] != "":
+            state_dict = torch.load(config_train['load_mlp'])
+            mlp_model.load_state_dict(state_dict)
         reg_net = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
-        state_dict = torch.load(config_train['load'])
-        reg_net.load_state_dict(state_dict)
-
+        if "load" in config_train and config_train['load'] != "":
+            state_dict = torch.load(config_train['load'])
+            reg_net.load_state_dict(state_dict)
     except:
         raise ValueError("Model initialization failed")
-
 
 
     ## Config training
@@ -80,15 +71,23 @@ def train_main(config):
         lambda_seg=config_train['lam_s'],
         lambda_mag=config_train['lam_m'],
         lambda_grad=config_train['lam_g'],
-        save_path=save_path)
+        save_path=save_path,
+        num_classes=config_train['num_classes'],
+        num_inter_by_epoch=config_train['num_inter_by_epoch']
+    )
 
 
     trainer_reg = pl.Trainer(**trainer_args)
 
-
-    config_dict_to_tensorboard(config['model_reg'], trainer_reg.logger.experiment, "Registration model config")
-    config_dict_to_tensorboard(config['model_svf'], trainer_reg.logger.experiment, "MLP model config")
-    config_dict_to_tensorboard(config_train, trainer_reg.logger.experiment, "Training config")
+    text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
+    trainer_reg.logger.experiment.add_text(text_md)
+    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
+    text_md = config_dict_to_markdown(config['model_svf'], "MLP model config")
+    trainer_reg.logger.experiment.add_text(text_md)
+    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
+    text_md = config_dict_to_markdown(config_train, "Training config")
+    trainer_reg.logger.experiment.add_text(text_md)
+    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
 
     # %%
     trainer_reg.fit(model, loader, val_dataloaders=None)
@@ -104,10 +103,5 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, help='Path to the config file', default='./config.json')
     args = parser.parse_args()
     config = json.load(open(args.config))
+    torch.set_float32_matmul_precision('high')
     train_main(config=config)
-
-
-    # o = tio.ScalarImage(tensor=inference_subject.source.data.detach().numpy(), affine=inference_subject.source.affine)
-    # o.save('source.nii.gz')
-    # o = tio.ScalarImage(tensor=inference_subject.target.data.detach().numpy(), affine=inference_subject.target.affine)
-    # o.save('target.nii.gz')

@@ -8,8 +8,16 @@ from dataset.subject_dataset import subjects_from_csv
 from torch.utils.data import Dataset, DataLoader
 
 
-# Dataset that return a triplet of subjects within a dict where the first and the second subjects are T0 / T1 subjects
 class TripletStaticAnchorsDataset(torch.utils.data.Dataset):
+    '''
+        Torch dataset that return a triplet of subjects within a dict where the first and the second subjects are T0 / T1 subjects
+        Args:
+            dataset_path: path to the csv file (First column should be the path to the image, second column the path to the label and third column the age)
+            t0: index of the first subject
+            t1: index of the second subject
+            transform: transformation to apply to the data
+            lambda_age: function to apply to the age
+    '''
     def __init__(self, dataset_path: str, t0: int, t1: int, transform: tio.Compose, lambda_age=None):
         if lambda_age is None:
             lambda_age = lambda x: x
@@ -18,8 +26,8 @@ class TripletStaticAnchorsDataset(torch.utils.data.Dataset):
         super().__init__()
         self.t0 = t0
         self.t1 = t1
-        self.subject_0 = self.dataset[2]
-        self.subject_1 = self.dataset[10]
+        self.subject_0 = self.dataset[0]
+        self.subject_1 = self.dataset[-1]
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -29,8 +37,14 @@ class TripletStaticAnchorsDataset(torch.utils.data.Dataset):
         return {str(i): anchors[i] for i in range(3)}
 
 
-# Dataset that return a triplet of subjects within a dict within the all possible comb
 class TripletSubjectDataset(PairwiseSubjectsDataset):
+    '''
+        Torch dataset that return a triplet of subjects within all possible combinaisons
+        Args:
+            dataset_path: path to the csv file (First column should be the path to the image, second column the path to the label and third column the age)
+            transform: transformation to apply to the data
+            lambda_age: function to apply to the age
+    '''
     def __init__(self, dataset_path: str,  transform: tio.Compose, lambda_age=None):
         if lambda_age is None:
             lambda_age = lambda x: x
@@ -45,6 +59,13 @@ class TripletSubjectDataset(PairwiseSubjectsDataset):
 
 
 class RandomTripletSubjectDataset(torch.utils.data.Dataset):
+    '''
+        Torch dataset that return a random triplet of subjects within all possible combinaisons
+        Args:
+            dataset_path: path to the csv file (First column should be the path to the image, second column the path to the label and third column the age)
+            transform: transformation to apply to the data
+            lambda_age: function to apply to the age
+    '''
     def __init__(self, dataset_path: str, transform: tio.Compose, lambda_age=None):
         if lambda_age is None:
             lambda_age = lambda x: x
@@ -58,31 +79,3 @@ class RandomTripletSubjectDataset(torch.utils.data.Dataset):
         sample = random.sample(range(0,len(self.dataset)), 5)
         return {str(i): self.dataset[sample[i]] for i in range(5)}
 
-
-class RandomSubjectsDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_path: str, transform: tio.Compose, lambda_age=None, number_elem=5):
-        if lambda_age is None:
-            lambda_age = lambda x: x
-        subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
-        self.dataset = tio.SubjectsDataset(subjects, transform=transform)
-        self.num_elem = number_elem
-    def __len__(self) -> int:
-        return 1
-
-    def __getitem__(self, idx) -> dict:
-        sample = random.sample(range(0,len(self.dataset)), self.num_elem)
-        return {str(i): self.dataset[sample[i]] for i in range(self.num_elem)}
-
-
-class WrappedSubjectDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_path: str, transform: tio.Compose, lambda_age=None):
-        if lambda_age is None:
-            lambda_age = lambda x: x
-        subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
-        self.dataset = tio.SubjectsDataset(subjects, transform=transform)
-
-    def __len__(self) -> int:
-        return 1
-
-    def __getitem__(self, idx) -> dict:
-        return self.dataset[idx]

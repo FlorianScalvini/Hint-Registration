@@ -1,0 +1,28 @@
+{
+    "inference":
+    {
+        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
+        "load": "/home/florian/Documents/Programs/Hint-Registration/Registration/Results/version_32/last_model.pth",
+        "save_path": "./Results/",
+        "logger": "log",
+        "num_classes" : 20,
+        "inshape" : 128,
+        "image_source" : "/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t21.00.nii.gz",
+        "label_source" : "/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz",
+        "image_target" : "/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t36.00.nii.gz",
+        "label_target" : "/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t36.00_dhcp-19.nii.gz"
+    },
+
+    "model_reg":
+    {
+      "model" : "AttentionUnet",
+      "args" :
+      {
+          "spatial_dims": 3,
+          "in_channels": 2,
+          "out_channels": 3,
+          "channels": [8, 16, 32],
+          "strides": [2, 2]
+      }
+    }
+}

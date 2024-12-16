@@ -1,0 +1,25 @@
+{
+    "test":
+    {
+        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
+        "t0": 21,
+        "t1": 36,
+        "load":  "",
+        "save_path": "./Results/",
+        "logger": "log",
+        "num_classes" : 20
+    },
+
+    "model_reg":
+    {
+      "model" : "AttentionUnet",
+      "args" :
+      {
+          "spatial_dims": 3,
+          "in_channels": 2,
+          "out_channels": 3,
+          "channels": [8, 16, 32],
+          "strides": [2, 2]
+      }
+    }
+}

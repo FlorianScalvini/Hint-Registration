@@ -1,30 +1,31 @@
+import json
 import torch
 import monai
 import argparse
 import numpy as np
 import torchio as tio
-
-from utils import dice_score, dice_score_old
+from monai.metrics import DiceMetric
 from Registration import RegistrationModuleSVF, RegistrationModule
+from utils import get_cuda_is_available_or_cpu, config_dict_to_tensorboard, get_model_from_string
 
-
-def inference(arguments):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def inference(config):
+    config_inference = config['inference']
+    device = get_cuda_is_available_or_cpu()
 
     ## Config Subject
     transforms = tio.Compose([
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128),
-        tio.OneHot(20)
+        tio.Resize(config_inference['inshape']),
+        tio.OneHot(config_inference['num_classes'])
     ])
 
     subject = tio.Subject(
-        source=tio.ScalarImage(arguments.source),
-        target=tio.ScalarImage(arguments.target),
-        source_label=tio.LabelMap(arguments.source_label),
-        target_label=tio.LabelMap(arguments.target_label)
+        source=tio.ScalarImage(config_inference["image_source"]),
+        target=tio.ScalarImage(config_inference["image_target"]),
+        source_label=tio.LabelMap(config_inference["label_source"]),
+        target_label=tio.LabelMap(config_inference["label_target"])
     )
 
     transformed_subject = transforms(subject)
@@ -33,43 +34,46 @@ def inference(arguments):
     target_img = torch.unsqueeze(transformed_subject['target'][tio.DATA], 0).to(device)
     source_label = torch.unsqueeze(transformed_subject['source_label'][tio.DATA], 0).float().to(device)
     target_label = torch.unsqueeze(transformed_subject['target_label'][tio.DATA], 0).float().to(device)
+    in_shape = source_img.shape[2:]
+
+    try:
+        model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7).eval().to(device)
+        if "load" in config_inference and config_inference['load'] != "":
+            state_dict = torch.load(config_inference['load'])
+            model.load_state_dict(state_dict)
+
+    except:
+        raise ValueError("Model initialization failed")
 
 
-
-    model = RegistrationModuleSVF(
-        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                strides=(2, 2)), inshape=[128, 128, 128], int_steps=7)
-
-    state_dict = torch.load("/home/florian/Documents/Programs/Hint-Registration/Registration/best_model.pth")
-    model.load_state_dict(state_dict)
-    model.to(device)
     velocity = model(source_img, target_img)
     forward_flow, backward_flow = model.velocity_to_flow(velocity)
-
     warped_source_img = model.warp(source_img, forward_flow)
     warped_target_img = model.warp(target_img, backward_flow)
-    warped_source_label = model.warp(source_label, forward_flow, mode='nearest')
-    warped_target_label = model.warp(target_label, backward_flow, mode='nearest')
+    warped_source_label = model.warp(source_label, forward_flow)
+    warped_target_label = model.warp(target_label, backward_flow)
 
-    warped_subjects = tio.Subject(
-        warped_source=tio.ScalarImage(tensor=warped_source_img[0].detach().cpu(), affine=transformed_subject["source"][tio.AFFINE]),
-        warped_target=tio.ScalarImage(tensor=warped_target_img[0].detach().cpu(), affine=transformed_subject["target"][tio.AFFINE]),
-        warped_source_label=tio.LabelMap(tensor=warped_source_label[0].detach().cpu(), affine=transformed_subject["source_label"][tio.AFFINE]),
-        warped_label_label=tio.LabelMap(tensor=warped_target_label[0].detach().cpu(), affine=transformed_subject["target_label"][tio.AFFINE])
-    )
-    dice = dice_score(warped_source_label.squeeze(dim=0).detach().cpu().numpy(),
-                      target_label.squeeze(dim=0).detach().cpu().numpy())
+    tio.ScalarImage(tensor=warped_source_img.squeeze(0).cpu().detach().numpy(), affine=transformed_subject['source'].affine).save('./source_warped.nii.gz')
+    tio.ScalarImage(tensor=warped_target_img.squeeze(0).cpu().detach().numpy(), affine=transformed_subject['target'].affine).save('./target_warped.nii.gz')
+    tio.LabelMap(tensor=torch.argmax(warped_source_label, dim=1).int().detach().cpu().numpy(), affine=transformed_subject['source_label'].affine).save('./source_label_warped.nii.gz')
+    tio.LabelMap(tensor=torch.argmax(warped_target_label, dim=1).int().detach().cpu().numpy(), affine=transformed_subject['target_label'].affine).save('./target_label_warped.nii.gz')
 
-    print(f"Mean Dice: {np.mean(dice)}")
-    print(f"Mean White Matter Dice: {np.mean(dice[5:7])}")
-    print(f"Mean Cortex Dice: {np.mean(dice[3:5])}")
+    dice_score = DiceMetric(include_background=True, reduction="none")
+    dice = dice_score(torch.round(warped_source_label), target_label)[0]
+    print(f"Mean Dice: {torch.mean(dice).item()}")
+    print(f"Mean Ventricule Dice: {torch.mean(dice[7:9]).item()}")
+    print(f"Mean Cortex Dice: {torch.mean(dice[3:5]).item()}")
 
-    dice = dice_score_old(torch.argmax(warped_source_label.squeeze(dim=0), dim=0),
-                          torch.argmax(target_label.squeeze(dim=0), dim=0), num_classes=20)
 
-    print(f"Mean Dice: {np.mean(dice)}")
-    print(f"Mean White Matter Dice: {np.mean(dice[5:7])}")
-    print(f"Mean Cortex Dice: {np.mean(dice[3:5])}")
+
+if __name__ == "__main__":
+    torch.set_float32_matmul_precision('high')
+    parser = argparse.ArgumentParser(description='Inference Registration 3D Images')
+    parser.add_argument('--config', type=str, help='Path to the config file', default='./config_inference.json')
+    args = parser.parse_args()
+    config = json.load(open(args.config))
+    inference(config=config)
+
 
 
 '''
@@ -80,25 +84,9 @@ def inference(arguments):
     o = tio.ScalarImage(tensor=warped_subjects["warped_source"][tio.DATA].cpu().detach().numpy(),
                         affine=warped_subjects["warped_source"].affine)
     o.save('./source_warped.nii.gz')
-    
+
     print(f"Mean Dice: {np.mean(dice)}")
     print(f"Mean White Matter Dice: {np.mean(dice[5:7])}")
     print(f"Mean Cortex Dice: {np.mean(dice[3:5])}")
 
 '''
-
-
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Registration Inference 3D Images')
-    parser.add_argument('--load', help='Input model', type=str, required=False, default="./model_attention_unet_svf.pth")
-    parser.add_argument('--output', help='Output directory', type=str, required=False, default="./output/")
-    parser.add_argument('-s', '--source', help='Source image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t21.00.nii.gz")
-    parser.add_argument('-t', '--target', help='Target image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t36.00.nii.gz")
-    parser.add_argument('-sl', '--source_label', help='Source image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz")
-    parser.add_argument('-tl', '--target_label', help='Target image', type=str, required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t36.00_dhcp-19.nii.gz")
-    parser.add_argument('--precision', help='Precision for Lightning trainer (16, 32 or 64)', type=int, required=False,
-                        default=32)
-    inference(parser.parse_args())
-    print("Success!")

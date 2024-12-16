@@ -6,9 +6,12 @@ import itertools
 import random
 
 class PairwiseSubjectsDataset(torch.utils.data.Dataset):
+    '''
+        Torch dataset that return a pair of subjects within all possible combinaisons
+    '''
     def __init__(self, dataset_path: str, transform: tio.Compose, num_elem=2, age=True, lambda_age: Callable = lambda x: x):
         super().__init__()
-        subjects = subjects_from_csv(dataset_path=dataset_path, age=False, lambda_age=None)
+        subjects = subjects_from_csv(dataset_path=dataset_path, age=age, lambda_age=lambda_age)
         self.pair_combinaisons = list(itertools.combinations(range(len(subjects)), num_elem))
         self.num_elem = num_elem
         self.dataset = tio.SubjectsDataset(subjects, transform=transform)
@@ -23,6 +26,9 @@ class PairwiseSubjectsDataset(torch.utils.data.Dataset):
 
 
 class RandomPairwiseSubjectsDataset(PairwiseSubjectsDataset):
+    '''
+        Torch dataset that return a random pair of subjects within all possible combinaisons
+    '''
     def __init__(self, dataset_path: str, transform: tio.Compose, num_elem=2, age=True, lambda_age: Callable = lambda x: x):
         super().__init__(dataset_path=dataset_path, transform=transform, num_elem=num_elem, age=age, lambda_age=lambda_age)
 

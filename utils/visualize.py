@@ -6,6 +6,8 @@ import torch
 def color_palette_20():
     return np.array([
             [0, 0, 0],       # Black
+            [255, 255, 255],  # White
+            [128, 128, 128],  # Bright Red
             [255, 0, 0],     # Bright Red
             [0, 255, 0],     # Bright Green
             [0, 0, 255],     # Bright Blue
@@ -25,17 +27,18 @@ def color_palette_20():
             [75, 0, 130],    # Indigo
             [255, 192, 203], # Pink
             [173, 216, 230], # Light Blue
+            [255, 255, 255],  # White
+
         ], dtype=np.uint8)
 
-def config_dict_to_tensorboard(config: dict, writer, section: str = "Config"):
+def config_dict_to_markdown(config: dict, section: str = "Config"):
     config_table = f"**{section}:**\n\n"  # Add bold title
     config_table += "| Parameter           | Value         |\n"
     config_table += "|---------------------|---------------|\n"
     for key, value in config.items():
         config_table += f"| {key}             | {value}       |\n"
     # Log the configuration under the "Config" section
-    writer.add_text(section, config_table)
-
+    return config_table
 
 # Map labels to RGB colors
 def map_labels_to_colors(label_tensor, color_palette=color_palette_20()):
@@ -51,14 +54,13 @@ def map_labels_to_colors(label_tensor, color_palette=color_palette_20()):
     rgb_image = color_palette[label_numpy]
     return torch.from_numpy(rgb_image)
 
-def seg_map_error(pred_tensor, gt_tensor):
+def seg_map_error(pred_tensor, gt_tensor, dim=0):
     pred_tensor = pred_tensor.cpu().detach()
     gt_tensor = gt_tensor.cpu().detach()
-    num_classes = pred_tensor.shape[1]
-    pred_tensor = torch.argmax(pred_tensor, dim=1)
-    gt_tensor = torch.argmax(gt_tensor, dim=1)
-    error_map = gt_tensor.clone()
-    error_map[pred_tensor != gt_tensor] = num_classes
+    pred_tensor = torch.argmax(pred_tensor, dim=dim)
+    gt_tensor = torch.argmax(gt_tensor, dim=dim)
+    error_map = torch.zeros(pred_tensor.shape).int()
+    error_map[pred_tensor != gt_tensor] = 1
     return error_map
 
 

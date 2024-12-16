@@ -24,23 +24,26 @@ os.environ["MKL_NUM_THREADS"] = "1"
 def train_main(config):
 
     ## Config Dataset / Dataloader
+    config_train = config['train']
     train_transform = tio.Compose([
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128)
+        tio.Resize(config_train['inshape']),
+        tio.OneHot(config_train['num_classes'])
     ])
 
     ## Config model
-    config_train = config['train']
     dataset = WrappedSubjectDataset(dataset_path=config_train['csv_path'], transform=train_transform, lambda_age=lambda x: (x - config_train['t0']) / (config_train['t1'] - config_train['t0']))
     loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8, persistent_workers=True)
     in_shape = dataset.dataset[0]['image'][tio.DATA].shape[1:]
 
     try:
         reg_net = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
-        state_dict = torch.load(config_train['load'])
-        reg_net.load_state_dict(state_dict)
+
+        if "load" in config_train and config_train['load'] != "":
+            state_dict = torch.load(config_train['load'])
+            reg_net.load_state_dict(state_dict)
 
     except:
         raise ValueError("Model initialization failed")
@@ -60,26 +63,25 @@ def train_main(config):
 
     temporal_model = TemporalTrajectorySVF(
         reg_model=reg_net,
-        loss=args.loss,
-        lambda_sim=args.lam_l,
-        lambda_seg=args.lam_s,
-        lambda_mag=args.lam_m,
-        lambda_grad=args.lam_g)
+        loss=config_train['loss'],
+        lambda_sim=config_train['lam_l'],
+        lambda_seg=config_train['lam_s'],
+        lambda_mag=config_train['lam_m'],
+        lambda_grad=config_train['lam_g'],
+        save_path=save_path)
 
 
     trainer_reg = pl.Trainer(**trainer_args)
 
-
     config_dict_to_tensorboard(config['model_reg'], trainer_reg.logger.experiment, "Registration model config")
-    config_dict_to_tensorboard(config['model_svf'], trainer_reg.logger.experiment, "MLP model config")
     config_dict_to_tensorboard(config_train, trainer_reg.logger.experiment, "Training config")
-
     # %%
     trainer_reg.fit(temporal_model, loader, val_dataloaders=None)
     if config_train['save']:
         torch.save(temporal_model.reg_model.state_dict(), os.path.join(save_path, config_train['save'] + "_reg.pth"))
 
 if __name__ == '__main__':
+    torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images')
     parser.add_argument('--config', type=str, help='Path to the config file', default='./config.json')
     args = parser.parse_args()

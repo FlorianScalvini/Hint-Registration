@@ -1,40 +1,42 @@
+import json
 import torch
 import monai
 import argparse
 import numpy as np
-import pandas as pd
-import torch.nn as nn
 import torchio as tio
-import pytorch_lightning as pl
-import torchvision.transforms.functional as TF
-
-from utils import dice_score
+from monai.metrics import DiceMetric
 from dataset import PairwiseSubjectsDataset
 from Registration import RegistrationModule, RegistrationModuleSVF
+from utils import get_cuda_is_available_or_cpu, get_model_from_string
 
-def main(arguments):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ## Config Dataset / Dataloader
+def test(config):
+    config_test = config['test']
+    device = get_cuda_is_available_or_cpu()
+
+    ## Config Subject
     transforms = tio.Compose([
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128),
-        tio.OneHot(20)
+        tio.Resize(config_test['inshape']),
+        tio.OneHot(config_test['num_classes'])
     ])
 
-    dataset = PairwiseSubjectsDataset(dataset_path=arguments.csv_path, transform=transforms)
+    dataset = PairwiseSubjectsDataset(dataset_path=config_test['csv_path'], transform=transforms, age=False)
 
-    model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8,16,32), strides=(2,2)), inshape=[128, 128, 128], int_steps=7)
+    in_shape = dataset.dataset.shape[1:]
+
     try:
-        model.load_state_dict(torch.load(arguments.load))
-    except:
-        raise FileNotFoundError("No model to load")
+        model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7).eval().to(device)
 
-    model.eval().to(device)
-    mean_dice = np.array([])
-    mean_white_matter_dice = np.array([])
-    mean_cortex_dice = np.array([])
+        if "load" in config_test and config_test['load'] != "":
+            state_dict = torch.load(config_test['load'])
+            model.load_state_dict(state_dict)
+
+    except:
+        raise ValueError("Model initialization failed")
+
+    dice_metric = DiceMetric(include_background=True, reduction="none").reset()
 
     for data in dataset:
         source, target = data.values()
@@ -45,36 +47,23 @@ def main(arguments):
 
         with torch.no_grad():
             forward_flow, backward_flow = model.forward_backward_flow_registration(source_img, target_img)
-        wrapped_source_label = model.wrap(source_label, forward_flow)
+            wrapped_source_label = model.warp(source_label, forward_flow)
+            wrapped_target_label = model.warp(target_label, backward_flow)
+            dice_metric(torch.round(wrapped_source_label), target_label)
+            dice_metric(torch.round(wrapped_target_label), source_label)
 
-
-
-        dice = dice_score(torch.argmax(wrapped_source_label, dim=1),
-                          torch.argmax(target_label, dim=1), num_classes=20)
-        mean_dice = np.append(mean_dice, np.mean(dice))
-        mean_white_matter_dice = np.append(mean_white_matter_dice, np.mean(dice[5:7]))
-        mean_cortex_dice = np.append(mean_cortex_dice, np.mean(dice[3:5]))
-        print(mean_dice[-1])
-
-        wrapped_target_label = model.wrap(target_label, backward_flow)
-        dice = dice_score(torch.argmax(wrapped_target_label, dim=1),
-                          torch.argmax(source_label, dim=1), num_classes=20)
-        mean_dice = np.append(mean_dice, np.mean(dice))
-        mean_white_matter_dice = np.append(mean_white_matter_dice, np.mean(dice[5:7]))
-        mean_cortex_dice = np.append(mean_cortex_dice, np.mean(dice[3:5]))
-        print(mean_dice[-1])
-    print(f"Mean Dice: {np.mean(mean_dice)}")
-    print(f"Mean White Matter Dice: {np.mean(mean_white_matter_dice)}")
-    print(f"Mean Cortex Dice: {np.mean(mean_cortex_dice)}")
-
+    overall_dice = torch.mean(dice_metric.aggregate())
+    print(f"Mean Dice: {torch.mean(overall_dice).item()}")
+    print(f"Mean Cortex: {torch.mean(overall_dice[:, 3:5]).item()}")
+    print(f"Ventricule: {torch.mean(overall_dice[:,7:9]).item()}")
 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Registration Test 3D Images')
-    parser.add_argument('-p', '--csv_path', help='csv file ', type=str, required=False, default="/home/florian/Documents/Programs/Hint-Registration/data/train_dataset.csv")
-    parser.add_argument('--load', help='Input model', type=str, required=False, default="/home/florian/Documents/Programs/Hint-Registration/Registration/model_attention_unet_svf.pth")
-    parser.add_argument('--precision', help='Precision for Lightning trainer (16, 32 or 64)', type=int, required=False,
-                        default=32)
-    main(parser.parse_args())
-    print("Success!")
+    torch.set_float32_matmul_precision('high')
+    parser = argparse.ArgumentParser(description='Test Registration 3D Images')
+    parser.add_argument('--config', type=str, help='Path to the config file', default='./config_test.json')
+    args = parser.parse_args()
+    config = json.load(open(args.config))
+    test(config=config)
+

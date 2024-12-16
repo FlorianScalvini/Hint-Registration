@@ -1,11 +1,14 @@
 import os
+import monai
 import torch
 import torchvision
 from utils.transform import normalize_to_0_1
-import monai
 
-# Create a new versioned directory
+
 def create_new_versioned_directory(base_name='./version', start_version=0):
+    '''
+        Create a new versioned directory
+    '''
     # Check if version_0 exists
     version = start_version
     while os.path.exists(f'{base_name}_{version}'):
@@ -15,9 +18,18 @@ def create_new_versioned_directory(base_name='./version', start_version=0):
     print(f'Created repository version: {new_version}')
     return new_version
 
+def write_text_to_file(text, file_name, mode='w'):
+    '''
+        # Write text to a file
+    '''
+    with open(file_name, mode) as file:
+        file.write(text)
 
 # Create a new directory recursively if it does not exist
 def create_directory(directory):
+    '''
+        Create a new directory recursively if it does not exist
+    '''
     if not os.path.exists(directory):
         os.makedirs(directory)
         print(f'Created directory: {directory}')

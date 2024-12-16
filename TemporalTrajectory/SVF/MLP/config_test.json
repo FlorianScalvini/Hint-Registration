@@ -1,11 +1,11 @@
 {
     "test":
     {
-        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset_fused_dataset.csv",
+        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
         "t0": 21,
         "t1": 36,
-        "load": "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_3/reg_model_best.pth",
-        "load_mlp": "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_3/mlp_model_best.pth",
+        "load" : "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_45/last_reg_model.pth",
+        "load_mlp" : "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_45/last_mlp_model.pth",
         "save_path": "./Results/",
         "logger": "log"
     },
