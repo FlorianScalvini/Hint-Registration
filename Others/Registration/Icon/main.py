@@ -1,11 +1,9 @@
 import itk
-import numpy as np
-import unittest
-import matplotlib.pyplot as plt
 import argparse
+import icon_registration.test_utils
 import icon_registration.itk_wrapper as itk_wrapper
 import icon_registration.pretrained_models
-import icon_registration.test_utils
+
 
 def main(source_path, target_path, source_label_path, target_label_path):
     # Define the image type as a 3D image with double precision
@@ -72,7 +70,6 @@ def main(source_path, target_path, source_label_path, target_label_path):
                                              output_direction=target.GetDirection(),
                                              output_origin=target.GetOrigin()
                                              )
-
 
     itk.imwrite(warped_image, "./icon_warped.nii.gz")
     itk.imwrite(inverse_warped_image, "./icon_inverse_warped.nii.gz")

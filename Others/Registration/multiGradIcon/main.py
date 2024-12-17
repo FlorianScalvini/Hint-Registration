@@ -1,9 +1,9 @@
 import torch
-import torch.nn.functional as F
-from icon_registration.mermaidlite import compute_warped_image_multiNC
-import torchio as tio
-from unigradicon import get_multigradicon
 import argparse
+import torchio as tio
+from monai.metrics import DiceMetric
+from unigradicon import get_multigradicon
+from icon_registration.mermaidlite import compute_warped_image_multiNC
 
 
 def main(subject):
@@ -49,6 +49,10 @@ def main(subject):
         0,
         zero_boundary=True
     )
+
+    dice_metric = DiceMetric(include_background=False, reduction="none")
+    dice = dice_metric(torch.argmax(warped_label_source, dim=1).unsqueeze(0).detach(), target_label)
+    print(f"Mean Dice: {torch.mean(dice).cpu().item()}")
 
     o = tio.ScalarImage(tensor=net.warped_image_A.squeeze(dim=0).cpu().detach().numpy(),
                         affine=subject["source"].affine)

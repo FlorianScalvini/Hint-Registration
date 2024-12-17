@@ -9,7 +9,7 @@ from Registration.spatial_transformation import SpatialTransformer, VecInt
 
 class RegistrationModule(nn.Module):
     '''
-        Registration module for 3D image registration
+        Registration module for 3D image registration with DVF
     '''
     def __init__(self, model: nn.Module, inshape: [int, int, int]):
         '''
@@ -22,7 +22,9 @@ class RegistrationModule(nn.Module):
 
 
     def forward(self, source: Tensor, target: Tensor) -> (Tensor, Tensor):
-
+        '''
+            Returns the deformation field from source to target image
+        '''
         x = torch.cat([source, target], dim=1)
         y = self.model(x)
         return y
@@ -92,6 +94,7 @@ class RegistrationModule(nn.Module):
 class RegistrationModuleSVF(RegistrationModule):
     '''
         Registration module for 3D image registration with stationary velocity field
+        based on the DVF Registration module
     '''
     def __init__(self, model: nn.Module, inshape: [int, int, int], int_steps: int = 7):
         '''
@@ -100,7 +103,7 @@ class RegistrationModuleSVF(RegistrationModule):
         :param int_steps: int
         '''
         super().__init__(model=model, inshape=inshape)
-        self.vecint = VecInt(inshape=inshape, nsteps=int_steps)
+        self.vecint = VecInt(inshape=inshape, nsteps=int_steps) # Vector integration based on Runge-Kutta method
 
     def velocity_to_flow(self, velocity):
         '''
@@ -119,6 +122,7 @@ class RegistrationModuleSVF(RegistrationModule):
     def forward_backward_flow_registration(self, source: Tensor, target: Tensor):
         '''
             Returns the forward and backward flow after registration
+            Override the parent method with SVF intergration between the Registration Network and the DVF output
         '''
         velocity = self.forward(source, target)
         forward_flow, backward_flow = self.velocity_to_flow(velocity)

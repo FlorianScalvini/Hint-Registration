@@ -10,7 +10,7 @@ from monai.metrics import DiceMetric
 from dataset import PairwiseSubjectsDataset
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from Registration import RegistrationModuleSVF, RegistrationModule
-from utils import get_model_from_string, create_directory, config_dict_to_tensorboard
+from utils import get_model_from_string, create_directory, write_text_to_file, config_dict_to_markdown
 
 
 class RegistrationTrainingModule(pl.LightningModule):
@@ -36,6 +36,9 @@ class RegistrationTrainingModule(pl.LightningModule):
         self.model.train()
 
     def training_step(self, batch):
+        '''
+        Compute the loss of the model on each pair of images
+        '''
         source, target = batch.values()
         forward_flow, backward_flow = self.model.forward_backward_flow_registration(source['image'][tio.DATA], target['image'][tio.DATA])
         loss_tensor = self.model.registration_loss(source, target, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad, device=self.device)
@@ -49,6 +52,9 @@ class RegistrationTrainingModule(pl.LightningModule):
 
 
     def on_train_epoch_end(self):
+        '''
+        Compute the dice score on the training dataset
+        '''
         self.model.eval()
         if self.current_epoch % 10 == 0:
             for i in self.trainer.train_dataloader.dataset:
@@ -79,20 +85,22 @@ def train(config):
         tio.OneHot(config_train['num_classes'])
     ])
 
+    ## Dateset's configuration : Load a pairwise dataset and the dataloader
     dataset = PairwiseSubjectsDataset(dataset_path=config_train['csv_path'], transform=train_transform, age=False)
     loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8, persistent_workers=True)
     in_shape = dataset.dataset[0]['image'][tio.DATA].shape[1:]
+
+    ## Model initialization and weights loading if needed
     try:
         model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
         if "load" in config_train and config_train['load'] != "":
             state_dict = torch.load(config_train['load'])
             model.load_state_dict(state_dict)
-
     except:
         raise ValueError("Model initialization failed")
 
 
-    ## Config training
+    ## Config training with hyperparameters
     trainer_args = {
         'max_epochs': config_train['epochs'],
         'precision': config_train['precision'],
@@ -100,21 +108,27 @@ def train(config):
         'accumulate_grad_batches': config_train['accumulate_grad_batches'],
         'logger': pl.loggers.TensorBoardLogger(save_dir= "./" + config_train['logger'], name=None)
     }
+    trainer_reg = pl.Trainer(**trainer_args)
 
     save_path = trainer_args['logger'].log_dir.replace(config_train['logger'], "Results")
     create_directory(save_path)
 
+
+
+    # %%
+    text_md = config_dict_to_markdown(config_train, "Test config")
+    trainer_reg.logger.experiment.add_text(text_md)
+    text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
+    trainer_reg.logger.experiment.add_text(text_md)
+    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
+
+    # Train the model
     training_module = RegistrationTrainingModule(model=model,
                                                  lambda_sim=config_train['lam_l'],
                                                  lambda_seg=config_train['lam_s'],
                                                  lambda_mag=config_train['lam_m'],
                                                  lambda_grad=config_train['lam_g'],
                                                  save_path=save_path)
-    trainer_reg = pl.Trainer(**trainer_args)
-    # %%
-    config_dict_to_tensorboard(config['model_reg'], trainer_reg.logger.experiment, "Registration model config")
-    config_dict_to_tensorboard(config_train, trainer_reg.logger.experiment, "Training config")
-
     trainer_reg.fit(training_module, train_dataloaders=loader, val_dataloaders=None)
     torch.save(training_module.model.state_dict(), os.path.join(save_path + "final_model_reg.pth"))
 

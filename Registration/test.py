@@ -22,23 +22,23 @@ def test(config):
         tio.OneHot(config_test['num_classes'])
     ])
 
+    ## Dateset's configuration : Load the dataset and the dataloader
     dataset = PairwiseSubjectsDataset(dataset_path=config_test['csv_path'], transform=transforms, age=False)
-
     in_shape = dataset.dataset.shape[1:]
 
+    # Model initialization and weights loading if needed
     try:
         model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7).eval().to(device)
-
         if "load" in config_test and config_test['load'] != "":
             state_dict = torch.load(config_test['load'])
             model.load_state_dict(state_dict)
-
     except:
         raise ValueError("Model initialization failed")
 
     dice_metric = DiceMetric(include_background=True, reduction="none").reset()
-
+    # Test loop
     for data in dataset:
+        # Get a pair of images (Source and Target)
         source, target = data.values()
         source_img = torch.unsqueeze(source['image'][tio.DATA], 0).to(device)
         target_img = torch.unsqueeze(target['image'][tio.DATA], 0).to(device)
@@ -49,9 +49,10 @@ def test(config):
             forward_flow, backward_flow = model.forward_backward_flow_registration(source_img, target_img)
             wrapped_source_label = model.warp(source_label, forward_flow)
             wrapped_target_label = model.warp(target_label, backward_flow)
-            dice_metric(torch.round(wrapped_source_label), target_label)
-            dice_metric(torch.round(wrapped_target_label), source_label)
+            dice_metric(torch.round(wrapped_source_label), target_label) # Compute the dice score between the Warped Source Label and the Target Label
+            dice_metric(torch.round(wrapped_target_label), source_label) # Compute the dice score between the Warped Target Label and the Source Label
 
+    # Compute the global and Cortex mean dice score
     overall_dice = torch.mean(dice_metric.aggregate())
     print(f"Mean Dice: {torch.mean(overall_dice).item()}")
     print(f"Mean Cortex: {torch.mean(overall_dice[:, 3:5]).item()}")

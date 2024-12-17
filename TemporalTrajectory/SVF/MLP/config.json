@@ -11,6 +11,7 @@
         "lam_s": 1,
         "lam_m": 0.001,
         "lam_g": 0.005,
+        "save": "final_model_",
         "logger": "log",
         "precision": 32,
         "tensor-cores": false,

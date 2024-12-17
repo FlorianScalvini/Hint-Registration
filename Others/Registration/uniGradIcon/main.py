@@ -1,11 +1,11 @@
 import torch
-import torch.nn.functional as F
-from icon_registration.mermaidlite import compute_warped_image_multiNC
-import torchio as tio
-from unigradicon import get_multigradicon, get_unigradicon
 import argparse
-from utils import dice_score, dice_score_old
 import numpy as np
+import torchio as tio
+from monai.metrics import DiceMetric
+from unigradicon import get_unigradicon
+from icon_registration.mermaidlite import compute_warped_image_multiNC
+
 def main(subject):
     ### Preprocess
     transform = tio.Compose(
@@ -13,7 +13,8 @@ def main(subject):
             # Clamp intensities to the 1st and 99th percentiles
             tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
             tio.transforms.CropOrPad(target_shape=221),
-            tio.Resize(target_shape=(175, 175, 175))
+            tio.Resize(target_shape=(175, 175, 175)),
+            tio.OneHot(num_classes=20)
         )
     )
 
@@ -49,11 +50,9 @@ def main(subject):
         zero_boundary=True
     )
 
-    dice_old = dice_score_old(warped_source_label.squeeze(dim=0), target_label.squeeze(dim=0), num_classes=20)
-
-    one_hot_warped_source = F.one_hot(warped_source_label.squeeze().long(), num_classes=20).float().permute(3, 0, 1, 2)
-    one_hot_target_label = F.one_hot(target_label.squeeze().long(), num_classes=20).permute(3, 0, 1, 2)
-    dice = dice_score(one_hot_warped_source.detach().cpu().numpy(), one_hot_target_label.detach().cpu().numpy())
+    dice_metric = DiceMetric(include_background=False, reduction="none")
+    dice = dice_metric(torch.argmax(warped_source_label, dim=1).unsqueeze(0).detach(), target_label)
+    print(f"Mean Dice: {torch.mean(dice).cpu().item()}")
 
     o = tio.ScalarImage(tensor=net.warped_image_A.squeeze(dim=0).cpu().detach().numpy(),
                         affine=subject["source"].affine)
@@ -68,11 +67,7 @@ def main(subject):
                      affine=subject["target_label"].affine)
     o.save('./unigradicon_inverse_warped_label.nii.gz')
 
-    print(f"Mean Dice: {np.mean(dice_old)}")
-    print(f"Mean Cortex Dice: {np.mean(dice_old[3:4])}")
 
-    print(f"Mean Dice: {np.mean(dice)}")
-    print(f"Mean Cortex Dice: {np.mean(dice[3:4])}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='UniGradIcon Registration 3D Image Pair with pretrained network')

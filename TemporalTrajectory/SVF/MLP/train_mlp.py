@@ -20,16 +20,14 @@ os.environ["MKL_NUM_THREADS"] = "1"
 
 def train_main(config):
     ## Config Dataset / Dataloader
+    config_train = config['train']
     train_transform = tio.Compose([
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
         tio.Resize(128),
-        tio.OneHot(20)
+        tio.OneHot(config_train['num_classes'])
     ])
-
-    config_train = config['train']
-
 
     ## Config model
     # get the spatial dimension of the data (3D)
@@ -43,10 +41,10 @@ def train_main(config):
         if "load_mlp" in config_train and config_train['load_mlp'] != "":
             state_dict = torch.load(config_train['load_mlp'])
             mlp_model.load_state_dict(state_dict)
-        reg_net = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
+        regnet = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
         if "load" in config_train and config_train['load'] != "":
             state_dict = torch.load(config_train['load'])
-            reg_net.load_state_dict(state_dict)
+            regnet.load_state_dict(state_dict)
     except:
         raise ValueError("Model initialization failed")
 
@@ -63,19 +61,6 @@ def train_main(config):
     save_path = trainer_args['logger'].log_dir.replace(config_train['logger'], "Results")
     create_directory(save_path)
 
-    model = TemporalTrajectoryMLPSVF(
-        reg_model=reg_net,
-        mlp_model=mlp_model,
-        loss=config_train['loss'],
-        lambda_sim=config_train['lam_l'],
-        lambda_seg=config_train['lam_s'],
-        lambda_mag=config_train['lam_m'],
-        lambda_grad=config_train['lam_g'],
-        save_path=save_path,
-        num_classes=config_train['num_classes'],
-        num_inter_by_epoch=config_train['num_inter_by_epoch']
-    )
-
 
     trainer_reg = pl.Trainer(**trainer_args)
 
@@ -89,11 +74,24 @@ def train_main(config):
     trainer_reg.logger.experiment.add_text(text_md)
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
 
-    # %%
-    trainer_reg.fit(model, loader, val_dataloaders=None)
-    if config_train['save']:
-        torch.save(model.reg_model.state_dict(), os.path.join(save_path, config_train['save'] + "_reg.pth"))
-        torch.save(model.temporal_mlp.state_dict(), os.path.join(save_path, config_train['save'] + "_mlp.pth"))
+    # Train the model
+    training_module = TemporalTrajectoryMLPSVF(
+        regnet=regnet,
+        mlp_model=mlp_model,
+        loss=config_train['loss'],
+        lambda_sim=config_train['lam_l'],
+        lambda_seg=config_train['lam_s'],
+        lambda_mag=config_train['lam_m'],
+        lambda_grad=config_train['lam_g'],
+        save_path=save_path,
+        num_classes=config_train['num_classes'],
+        num_inter_by_epoch=config_train['num_inter_by_epoch']
+    )
+    trainer_reg.fit(training_module, loader, val_dataloaders=None)
+
+    if 'save' in config_train:
+        torch.save(training_module.reg_model.state_dict(), os.path.join(save_path, config_train['save'] + "_reg.pth"))
+        torch.save(training_module.temporal_mlp.state_dict(), os.path.join(save_path, config_train['save'] + "_mlp.pth"))
 
 
 

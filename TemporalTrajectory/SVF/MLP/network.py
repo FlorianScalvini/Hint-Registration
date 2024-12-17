@@ -3,7 +3,15 @@ import torch.nn.init as init
 import torch
 
 class MLP(nn.Module):
-    def __init__(self, hidden_size, activation_layer=nn.ReLU, output_activation=None):
+    '''
+        Multi-layer perceptron
+    '''
+    def __init__(self, hidden_size : list[int], activation_layer=nn.ReLU, output_activation=None):
+        '''
+        :param hidden_size: list of int containing the size of each hidden layer
+        :param activation_layer: activation function at each hidden layer
+        :param output_activation: activation function at the output layer
+        '''
         super(MLP, self).__init__()
         layers = []
         for i in range(len(hidden_size) - 2):
@@ -13,11 +21,10 @@ class MLP(nn.Module):
         if output_activation is not None:
             layers.append(output_activation())
         self.model = nn.Sequential(*layers)
-
         self._initialize_weights()
 
     def forward(self, x):
-        return torch.abs(self.model(x))
+        return self.model(x)
 
     def _initialize_weights(self):
         for layer in self.modules():

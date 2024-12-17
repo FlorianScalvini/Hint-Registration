@@ -12,24 +12,24 @@ from monai.metrics import DiceMetric
 from Registration import SpatialTransformer, VecInt
 import random
 
+
 class TemporalTrajectorySVF(pl.LightningModule):
-    def __init__(self, reg_model: RegistrationModuleSVF, loss: str = 'mse', lambda_sim: float = 1.0,
+    def __init__(self, regnet: RegistrationModuleSVF, loss: str = 'mse', lambda_sim: float = 1.0,
                  lambda_seg: float = 0, lambda_mag: float = 0, lambda_grad: float = 0, save_path: str = "./", num_classes: int = 3):
         super().__init__()
-        self.reg_model = reg_model
+        self.regnet = regnet
         self.sim_loss = GetLoss(loss)
         self.lambda_seg = lambda_seg
         self.lambda_sim = lambda_sim
         self.lambda_mag = lambda_mag
         self.lambda_grad = lambda_grad
         self.mDice = 0
-        self.pairwise_index = [[0, 1, 2], [0, 2, 1], [1, 2, 0]]
         self.save_path = save_path
         self.num_classes = num_classes
         self.dice_metric = DiceMetric(include_background=True, reduction="none")
 
     def on_train_epoch_start(self) -> None:
-        self.reg_model.train()
+        self.regnet.train()
 
 
     def on_train_start(self) -> None:
@@ -40,8 +40,6 @@ class TemporalTrajectorySVF(pl.LightningModule):
                 self.subject_t0 = self.trainer.train_dataloader.dataset.dataset[i]
             if self.trainer.train_dataloader.dataset.dataset[i]['age'] == 1:
                 self.subject_t1 = self.trainer.train_dataloader.dataset.dataset[i]
-
-
         self.subject_t0['image'][tio.DATA] = self.subject_t0['image'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
         self.subject_t0['label'][tio.DATA] = self.subject_t0['label'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
         self.subject_t1['image'][tio.DATA] = self.subject_t1['image'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
@@ -50,22 +48,21 @@ class TemporalTrajectorySVF(pl.LightningModule):
         self.num_inter_by_epoch = 10
 
     def forward(self, source: Tensor, target: Tensor):
-        return self.reg_model(source, target)
+        return self.regnet(source, target)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         return optimizer
 
     def training_step(self, batch, batch_idx):
-        velocity = self.reg_model(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
-        forward_flow, backward_flow = self.reg_model.velocity_to_flow(velocity=velocity)
-        loss_tensor = self.reg_model.registration_loss(self.subject_t0, self.subject_t1, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad)
+        velocity = self.regnet(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
+        forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity)
+        loss_tensor = self.regnet.registration_loss(self.subject_t0, self.subject_t1, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad)
         index = random.sample(range(0, len(self.trainer.train_dataloader.dataset.dataset) - 2), self.num_inter_by_epoch)
         for i in index:
             subject = self.trainer.train_dataloader.dataset.dataset[i + 1]
-            forward_flow, backward_flow = self.reg_model.velocity_to_flow(velocity=velocity * subject['age'])
-            loss_tensor += self.reg_model.registration_loss(self.subject_t0, subject, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad)
-
+            forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity * subject['age'])
+            loss_tensor += self.regnet.registration_loss(self.subject_t0, subject, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad)
         loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
@@ -77,14 +74,14 @@ class TemporalTrajectorySVF(pl.LightningModule):
 
     def on_train_epoch_end(self):
         if self.current_epoch % 10 == 0:
-            self.reg_model.model.eval()
+            self.regnet.model.eval()
             with torch.no_grad():
-                velocity = self.reg_model(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
-                forward_flow, backward_flow = self.reg_model.velocity_to_flow(velocity=velocity)
-                label_warped_source = self.reg_model.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(),
-                                                          forward_flow)
-                image_warped_source = self.reg_model.warp(self.subject_t0['image'][tio.DATA].to(self.device).float(),
-                                                          forward_flow)
+                velocity = self.regnet(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
+                forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity)
+                label_warped_source = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(),
+                                                       forward_flow)
+                image_warped_source = self.regnet.warp(self.subject_t0['image'][tio.DATA].to(self.device).float(),
+                                                       forward_flow)
                 tio.LabelMap(tensor=torch.argmax(label_warped_source, dim=1).int().detach().cpu().numpy(),
                              affine=self.subject_t0['label'].affine).save(
                     self.save_path + "/label_warped_source.nii.gz")
@@ -92,8 +89,8 @@ class TemporalTrajectorySVF(pl.LightningModule):
                                 affine=self.subject_t0['image'].affine).save(
                     self.save_path + "/image_warped_source.nii.gz")
                 for subject in self.trainer.train_dataloader.dataset.dataset:
-                    forward_flow, backward_flow = self.reg_model.velocity_to_flow(velocity * subject['age'])
-                    warped_source_label = self.reg_model.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(),
+                    forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity * subject['age'])
+                    warped_source_label = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(),
                                                           forward_flow)
                     self.dice_metric(torch.round(warped_source_label).int(),
                                      subject['label'][tio.DATA].to(self.device).int().unsqueeze(0))
@@ -103,21 +100,26 @@ class TemporalTrajectorySVF(pl.LightningModule):
             if self.dice_max < mean_dices:
                 self.dice_max = mean_dices
                 print("New best dice:", self.dice_max)
-                torch.save(self.reg_model.state_dict(), self.save_path + "/model_linear_best.pth")
-        torch.save(self.reg_model.state_dict(), self.save_path + "/last_model_reg.pth")
+                torch.save(self.regnet.state_dict(), self.save_path + "/model_linear_best.pth")
+        torch.save(self.regnet.state_dict(), self.save_path + "/last_model_reg.pth")
 
+    def save_model(self, path: str):
+        torch.save(self.regnet.state_dict(), path)
+
+    def load_model(self, path: str):
+        self.regnet.load_state_dict(torch.load(path))
 
 
 
 class LongitudinalAtlasMeanVelocityModule(TemporalTrajectorySVF):
-    def __init__(self, reg_model: RegistrationModuleSVF, loss: str = 'mse', lambda_sim: float = 1.0,
+    def __init__(self, regnet: RegistrationModuleSVF, loss: str = 'mse', lambda_sim: float = 1.0,
                  lambda_seg: float = 0, lambda_mag: float = 0, lambda_grad: float = 0):
-        super().__init__(reg_model=reg_model, loss=loss, lambda_sim=lambda_sim, lambda_seg=lambda_seg, lambda_mag=lambda_mag, lambda_grad=lambda_grad)
+        super().__init__(regnet=regnet, loss=loss, lambda_sim=lambda_sim, lambda_seg=lambda_seg, lambda_mag=lambda_mag, lambda_grad=lambda_grad)
         self.mDice = 0
         self.weightedMeanVelocity = None
 
     def on_train_epoch_end(self):
-        torch.save(self.reg_model.state_dict(), "./model_last_epoch.pth")
+        torch.save(self.regnet.state_dict(), "./model_last_epoch.pth")
         torch.save(self.weightedMeanVelocity, "./weightedMeanVelocityTensor.pth")
 
     def training_step(self, batch, batch_idx):
@@ -136,8 +138,8 @@ class LongitudinalAtlasMeanVelocityModule(TemporalTrajectorySVF):
         for i in range(len(self.trainer.train_dataloader.dataset.subject_dataset)):
             target_subject = self.trainer.train_dataloader.dataset.get_subject(i)
             weight = target_subject['age'] - batch['age'][0]
-            forward_flow, backward_flow = self.reg_model.velocity_to_flow(weightedMeanVelocity * weight)
-            loss_tensor += self.reg_model.registration_loss(batch, target_subject, forward_flow, backward_flow)
+            forward_flow, backward_flow = self.regnet.velocity_to_flow(weightedMeanVelocity * weight)
+            loss_tensor += self.regnet.registration_loss(batch, target_subject, forward_flow, backward_flow)
 
         loss = self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]
 
