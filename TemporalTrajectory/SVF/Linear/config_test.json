@@ -7,7 +7,8 @@
         "load":  "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/Linear/Results/version_36/last_model_reg.pth",
         "save_path": "./Results/",
         "logger": "log",
-        "num_classes" : 20
+        "num_classes" : 20,
+        "inshape": 128
     },
 
     "model_reg":

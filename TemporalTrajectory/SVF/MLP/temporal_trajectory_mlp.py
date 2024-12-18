@@ -102,7 +102,7 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
             with torch.no_grad():
 
                 # Compute the velocity field between T0 and T1
-                velocity = self.model(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
+                velocity = self.regnet(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
                 temporal_weight = torch.abs(self.mlp(torch.tensor([1.0]).to(self.device)))
                 forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity * temporal_weight)
                 label_warped_source = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(), forward_flow)
@@ -208,7 +208,7 @@ class TemporalTrajectoryActiveLearningMLP(TemporalTrajectoryMLPSVF):
         accumulate_errors = torch.tensor([]).to(self.device)
         with torch.no_grad():
             # Compute the velocity field between T0 and T1
-            velocity = self.model(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
+            velocity = self.regnet(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
             temporal_weight = torch.abs(self.mlp(torch.tensor([1.0]).to(self.device)))
             forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity * temporal_weight)
             label_warped_source = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(), forward_flow)

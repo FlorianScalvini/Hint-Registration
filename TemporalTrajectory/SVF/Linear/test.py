@@ -31,14 +31,14 @@ def test(config):
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128),
-        tio.OneHot(20)
+        tio.Resize(config_test['inshape']),
+        tio.OneHot(config_test['num_classes'])
     ]
 
     text_md = config_dict_to_markdown(config['test'], "Test config")
-    loggers.experiment.add_text(text_md)
+    loggers.experiment.add_text(text_md, "Test config")
     text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    loggers.experiment.add_text(text_md)
+    loggers.experiment.add_text(text_md, "Registration model config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
 
     subjects = subjects_from_csv(config_test['csv_path'], age=True, lambda_age=lambda x: (x - config_test['t0']) / (config_test['t1'] - config_test['t0']))

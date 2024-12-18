@@ -25,7 +25,7 @@ def train_main(config):
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128),
+        tio.Resize(config_train['inshape']),
         tio.OneHot(config_train['num_classes'])
     ])
 
@@ -65,13 +65,13 @@ def train_main(config):
     trainer_reg = pl.Trainer(**trainer_args)
 
     text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Registration model config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
     text_md = config_dict_to_markdown(config['model_svf'], "MLP model config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "MLP model config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
     text_md = config_dict_to_markdown(config_train, "Training config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Training config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
 
     # Train the model

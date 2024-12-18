@@ -62,9 +62,9 @@ def train_main(config):
 
     # Write config file into a Tensorboard logger and a markdown file
     text_md = config_dict_to_markdown(config_train, "Training config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Training config")
     text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Registration model config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
 
 

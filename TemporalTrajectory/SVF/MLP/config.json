@@ -16,7 +16,8 @@
         "precision": 32,
         "tensor-cores": false,
         "num_classes" : 20,
-        "num_inter_by_epoch": 10
+        "inshape": 128,
+        "num_inter_by_epoch": 8
     },
 
     "model_reg":
@@ -37,7 +38,7 @@
         "model" : "mlp",
         "args" :
         {
-            "hidden_size": [1, 8, 8, 8, 1],
+            "hidden_size": [1, 32, 32, 32, 1],
             "activation_layer": "ReLU",
             "output_activation": ""
         }

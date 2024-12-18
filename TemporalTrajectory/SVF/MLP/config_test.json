@@ -7,7 +7,8 @@
         "load" : "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_45/last_reg_model.pth",
         "load_mlp" : "/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/Results/version_45/last_mlp_model.pth",
         "save_path": "./Results/",
-        "logger": "log"
+        "logger": "log",
+        "inshape": 128
     },
 
     "model_reg":

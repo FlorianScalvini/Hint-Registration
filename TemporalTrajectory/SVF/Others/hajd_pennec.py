@@ -35,8 +35,8 @@ def test(config):
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
         tio.transforms.Clamp(out_min=0, out_max=1),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(128),
-        tio.OneHot(NUM_CLASSES)
+        tio.Resize(config_test['inshape']),
+        tio.OneHot(config_test['num_classes'])
     ]
 
     subjects_original_shape = (180, 221, 180)

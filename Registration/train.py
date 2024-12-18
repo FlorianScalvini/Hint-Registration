@@ -37,7 +37,7 @@ class RegistrationTrainingModule(pl.LightningModule):
 
     def training_step(self, batch):
         '''
-        Compute the loss of the model on each pair of images
+            Compute the loss of the model on each pair of images
         '''
         source, target = batch.values()
         forward_flow, backward_flow = self.model.forward_backward_flow_registration(source['image'][tio.DATA], target['image'][tio.DATA])
@@ -53,7 +53,7 @@ class RegistrationTrainingModule(pl.LightningModule):
 
     def on_train_epoch_end(self):
         '''
-        Compute the dice score on the training dataset
+            Compute the dice score on the training dataset
         '''
         self.model.eval()
         if self.current_epoch % 10 == 0:
@@ -115,11 +115,11 @@ def train(config):
 
 
 
-    # %%
+    # Log the config file
     text_md = config_dict_to_markdown(config_train, "Test config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Test config")
     text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    trainer_reg.logger.experiment.add_text(text_md)
+    trainer_reg.logger.experiment.add_text(text_md, "Registration model config")
     write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
 
     # Train the model
