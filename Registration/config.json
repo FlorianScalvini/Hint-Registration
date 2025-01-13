@@ -2,19 +2,19 @@
     "train":
     {
 
-        "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
-        "epochs": 200,
-        "accumulate_grad_batches": 1,
+        "csv_path": "../data/full_dataset_fused_dataset.csv",
+        "epochs": 1000,
+        "accumulate_grad_batches": 4,
         "loss": "mse",
-        "lam_l": 20,
-        "lam_s": 10,
-        "lam_m": 0.01,
-        "lam_g": 0.1,
-        "load": "/home/florian/Documents/Programs/Hint-Registration/Registration/model_attention_unet_svf.pth",
+        "lam_l": 1,
+        "lam_s": 1,
+        "lam_m": 0.001,
+        "lam_g": 0.005,
+        "load": "./Results/version_32/last_model.pth",
         "logger": "log",
         "precision": 32,
         "tensor-cores": false,
-        "num_classes" : 20,
+        "num_classes" : 3,
         "inshape" : 128
     },
 

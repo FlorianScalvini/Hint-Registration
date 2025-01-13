@@ -4,7 +4,7 @@
         "csv_path": "/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv",
         "t0": 21,
         "t1": 36,
-        "epochs": 2000,
+        "epochs": 15000,
         "accumulate_grad_batches": 1,
         "loss": "mse",
         "lam_l": 1,
@@ -17,7 +17,7 @@
         "tensor-cores": false,
         "num_classes" : 20,
         "inshape": 128,
-        "num_inter_by_epoch": 8
+        "num_inter_by_epoch": 1
     },
 
     "model_reg":

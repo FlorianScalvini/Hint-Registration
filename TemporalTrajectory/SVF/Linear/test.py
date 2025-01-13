@@ -61,7 +61,7 @@ def test(config):
         raise ValueError("Model initialization failed")
     model.eval().to(device)
 
-    dice_score = DiceMetric(include_background=False, reduction="none")
+    dice_score = DiceMetric(include_background=True, reduction="none")
     with open(save_path + "/results.csv", mode='w') as file:
         header = ["time", "mDice", "Cortex", "Ventricule", "all"]
         writer = csv.DictWriter(file, fieldnames=header)
@@ -109,7 +109,7 @@ def test(config):
                                   other_target["label"][tio.DATA].unsqueeze(0).float().to(device))
                 writer.writerow({
                     "time": age,
-                    "mDice": torch.mean(dice[0]).item(),
+                    "mDice": torch.mean(dice[0][1:]).item(),
                     "Cortex": torch.mean(dice[0][3:5]).item(),
                     "Ventricule": torch.mean(dice[0][7:9]).item(),
                     "all": dice[0].cpu().numpy()
@@ -117,7 +117,7 @@ def test(config):
 
                 loggers.experiment.add_scalar("Dice ventricule", torch.mean(dice[0][7:9]).item(), age)
                 loggers.experiment.add_scalar("Dice cortex", torch.mean(dice[0][3:5]).item(), age)
-                loggers.experiment.add_scalar("mDice", torch.mean(dice[0]).item(), age)
+                loggers.experiment.add_scalar("mDice", torch.mean(dice[0][1:]).item(), age)
 
 
 

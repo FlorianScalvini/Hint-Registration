@@ -4,8 +4,12 @@ import os
 import json
 import torch
 import argparse
+import numpy as np
 import torchio as tio
+import torch.nn as nn
+from torch import Tensor
 import pytorch_lightning as pl
+import torch.nn.functional as F
 from monai.metrics import DiceMetric
 from dataset import PairwiseSubjectsDataset
 from pytorch_lightning.strategies.ddp import DDPStrategy
@@ -23,7 +27,7 @@ class RegistrationTrainingModule(pl.LightningModule):
         self.lambda_grad = lambda_grad
         self.save_path = save_path
         self.dice_metric = DiceMetric(include_background=True, reduction="none")
-
+        self.dice_max = 0
     def forward(self, source: torch.Tensor, target: torch.Tensor):
         return self.model(source, target)
 
@@ -55,22 +59,34 @@ class RegistrationTrainingModule(pl.LightningModule):
         '''
             Compute the dice score on the training dataset
         '''
-        self.model.eval()
-        if self.current_epoch % 10 == 0:
-            for i in self.trainer.train_dataloader.dataset:
-                source, target = i.values()
-                velocity = self.model(source['image'][tio.DATA].unsqueeze(dim=0).to(self.device),
-                                      target['image'][tio.DATA].unsqueeze(dim=0).to(self.device))
-                forward_flow, backward_flow = self.model.velocity_to_flow(velocity)
-
-                warped_source_label = self.model.warp(torch.round(source['label'][tio.DATA].float().unsqueeze(dim=0).to(self.device)), forward_flow)
-                self.dice_metric(torch.round(warped_source_label), target['label'][tio.DATA].unsqueeze(0).float().to(self.device))
-            overall_dice = torch.mean(self.dice_metric.aggregate()).item()
-            self.log("Mean dice", overall_dice, prog_bar=True, on_epoch=True, sync_dist=True)
-            if self.dice_max < overall_dice:
-                self.dice_max = overall_dice
-                torch.save(self.model.state_dict(), self.save_path + "/best_model.pth")
         torch.save(self.model.state_dict(), self.save_path + "/last_model.pth")
+
+    def validation_step(self, batch):
+        self.dice_metric.reset()
+        source, target = batch.values()
+        dice_scores = []
+        with torch.no_grad():
+            forward_flow, backward_flow = self.model.forward_backward_flow_registration(source['image'][tio.DATA], target['image'][tio.DATA])
+            warped_source_label = self.model.warp(
+                torch.round(source['label'][tio.DATA].float().to(self.device)), forward_flow)
+            self.dice_metric(torch.round(warped_source_label), target['label'][tio.DATA].float().to(self.device))
+            loss_tensor = self.model.registration_loss(source, target, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad, device=self.device)
+            loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
+            dice = self.dice_metric(torch.round(warped_source_label), target['label'][tio.DATA].float().to(self.device))[0]
+            dice_scores.append(torch.mean(dice[1:]).cpu().numpy())
+
+            self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
+            self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
+            self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
+            self.log("Magnitude", self.lambda_mag * loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
+            self.log("Gradient", self.lambda_grad * loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
+
+        mean_dices =  sum(dice_scores) / len(dice_scores)
+        self.log("Mean dice", mean_dices, prog_bar=True, on_epoch=True, sync_dist=True)
+        if self.dice_max < mean_dices:
+            self.dice_max = mean_dices
+            torch.save(self.model.state_dict(), self.save_path + "/best_model.pth")
+        return loss
 
 
 def train(config):
@@ -78,16 +94,16 @@ def train(config):
 
     ## Config Dataset / Dataloader
     train_transform = tio.Compose([
-        tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
-        tio.transforms.Clamp(out_min=0, out_max=1),
+        tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
         tio.transforms.CropOrPad(target_shape=221),
         tio.Resize(config_train['inshape']),
-        tio.OneHot(config_train['num_classes'])
+        tio.OneHot(config_train['num_classes']),
     ])
 
     ## Dateset's configuration : Load a pairwise dataset and the dataloader
     dataset = PairwiseSubjectsDataset(dataset_path=config_train['csv_path'], transform=train_transform, age=False)
-    loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8, persistent_workers=True)
+    loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8)
+
     in_shape = dataset.dataset[0]['image'][tio.DATA].shape[1:]
 
     ## Model initialization and weights loading if needed
@@ -104,9 +120,9 @@ def train(config):
     trainer_args = {
         'max_epochs': config_train['epochs'],
         'precision': config_train['precision'],
-        'strategy': DDPStrategy(find_unused_parameters=True),
         'accumulate_grad_batches': config_train['accumulate_grad_batches'],
-        'logger': pl.loggers.TensorBoardLogger(save_dir= "./" + config_train['logger'], name=None)
+        'logger': pl.loggers.TensorBoardLogger(save_dir= "./" + config_train['logger'], name=None),
+        'check_val_every_n_epoch': 20
     }
     trainer_reg = pl.Trainer(**trainer_args)
 
@@ -129,8 +145,8 @@ def train(config):
                                                  lambda_mag=config_train['lam_m'],
                                                  lambda_grad=config_train['lam_g'],
                                                  save_path=save_path)
-    trainer_reg.fit(training_module, train_dataloaders=loader, val_dataloaders=None)
-    torch.save(training_module.model.state_dict(), os.path.join(save_path + "final_model_reg.pth"))
+    trainer_reg.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
+    torch.save(training_module.model.state_dict(), os.path.join(save_path + "/final_model_reg.pth"))
 
 
 if __name__ == '__main__':

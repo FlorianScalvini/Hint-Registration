@@ -63,7 +63,7 @@ class WrappedSubjectDataset(torch.utils.data.Dataset):
             transform: transformation to apply to the data
             lambda_age: function to apply to the age
     '''
-    def __init__(self, dataset_path: str, transform: tio.Compose, lambda_age=None):
+    def __init__(self, dataset_path: str, transform: tio.Compose | None, lambda_age=None):
         if lambda_age is None:
             lambda_age = lambda x: x
         subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
@@ -72,7 +72,7 @@ class WrappedSubjectDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, idx) -> dict:
+    def __getitem__(self, idx) -> tio.Subject:
         return self.dataset[idx]
 
 class OneWrappedSubjectDataset(torch.utils.data.Dataset):
@@ -92,5 +92,5 @@ class OneWrappedSubjectDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return 1
 
-    def __getitem__(self, idx) -> dict:
+    def __getitem__(self, idx) -> tio.Subject:
         return self.dataset[idx]

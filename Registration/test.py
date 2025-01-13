@@ -9,33 +9,26 @@ from dataset import PairwiseSubjectsDataset
 from Registration import RegistrationModule, RegistrationModuleSVF
 from utils import get_cuda_is_available_or_cpu, get_model_from_string
 
-def test(config):
-    config_test = config['test']
+def test(arguments):
     device = get_cuda_is_available_or_cpu()
 
     ## Config Subject
     transforms = tio.Compose([
-        tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
-        tio.transforms.Clamp(out_min=0, out_max=1),
+        tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(config_test['inshape']),
-        tio.OneHot(config_test['num_classes'])
+        tio.Resize(arguments.inshape),
+        tio.OneHot(arguments.num_classes)
     ])
 
     ## Dateset's configuration : Load the dataset and the dataloader
-    dataset = PairwiseSubjectsDataset(dataset_path=config_test['csv_path'], transform=transforms, age=False)
-    in_shape = dataset.dataset.shape[1:]
+    dataset = PairwiseSubjectsDataset(dataset_path=arguments.csv_path, transform=transforms, age=False)
+    subject_inshape = dataset[0]['0']['image'][tio.DATA].shape[1:]
+    model = RegistrationModuleSVF(
+        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
+                                                strides=(2, 2)), inshape=subject_inshape, int_steps=7).eval().to(device)
+    model.load_state_dict(torch.load(arguments.load))
 
-    # Model initialization and weights loading if needed
-    try:
-        model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7).eval().to(device)
-        if "load" in config_test and config_test['load'] != "":
-            state_dict = torch.load(config_test['load'])
-            model.load_state_dict(state_dict)
-    except:
-        raise ValueError("Model initialization failed")
-
-    dice_metric = DiceMetric(include_background=True, reduction="none").reset()
+    dice_metric = DiceMetric(include_background=True, reduction="none")
     # Test loop
     for data in dataset:
         # Get a pair of images (Source and Target)
@@ -53,18 +46,24 @@ def test(config):
             dice_metric(torch.round(wrapped_target_label), source_label) # Compute the dice score between the Warped Target Label and the Source Label
 
     # Compute the global and Cortex mean dice score
-    overall_dice = torch.mean(dice_metric.aggregate())
-    print(f"Mean Dice: {torch.mean(overall_dice).item()}")
-    print(f"Mean Cortex: {torch.mean(overall_dice[:, 3:5]).item()}")
-    print(f"Ventricule: {torch.mean(overall_dice[:,7:9]).item()}")
-
+    all_dice = dice_metric.get_buffer()
+    print(f"Mean Dice: {torch.mean(all_dice[: , 1:]).item()}")
+    print(f"Mean Cortex: {torch.mean(all_dice[:, 3:5]).item()}")
+    print(f"Ventricule: {torch.mean(all_dice[:,7:9]).item()}")
 
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description='Test Registration 3D Images')
-    parser.add_argument('--config', type=str, help='Path to the config file', default='./config_test.json')
+    parser.add_argument("--csv_path", type=str, help="Path to the csv file", required=False, default="../data/full_dataset.csv")
+    parser.add_argument("--load", type=str, help="Path to the model weights", required=False, default="./Results/version_32/last_model.pth")
+    parser.add_argument("--save_path", type=str, help="Path to save the results", required=False, default="./Results/")
+    parser.add_argument("--logger", type=str, help="Logger to use", required=False, default="log")
+    parser.add_argument("--inshape", type=int, help="Input shape", required=False, default=128)
+    parser.add_argument("--num_classes", type=int, help="Number of classes", required=False, default=20)
+    parser.add_argument("--t0", type=int, help="Time at t=0", required=False, default=21)
+    parser.add_argument("--t1", type=int, help="Time at t=1", required=False, default=36)
+
     args = parser.parse_args()
-    config = json.load(open(args.config))
-    test(config=config)
+    test(arguments=args)
 

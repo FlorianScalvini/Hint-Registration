@@ -3,6 +3,8 @@
 import os.path
 import csv
 import json
+import shutil
+
 import torch
 import argparse
 import torchio as tio
@@ -10,16 +12,20 @@ import pytorch_lightning as pl
 from monai.metrics import DiceMetric
 from dataset import subjects_from_csv
 from temporal_trajectory_mlp import MLP
+import torchvision.transforms.functional as TF
 from Registration import RegistrationModuleSVF
 from utils import get_cuda_is_available_or_cpu, get_activation_from_string, get_model_from_string, create_directory, seg_map_error, map_labels_to_colors, write_text_to_file, config_dict_to_markdown
 
 def test(config):
+
+    config = json.load(open(args.config))
     # Config Dataset / Dataloader
     config_test = config['test']
     device = get_cuda_is_available_or_cpu()
     loggers = pl.loggers.TensorBoardLogger(save_dir= "./" + config_test['logger'], name=None)
     save_path = loggers.log_dir.replace(config_test['logger'], "Results")
     create_directory(save_path)
+    shutil.copy(args.config, save_path + "/config.json")
 
     transforms = [
         tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
@@ -29,14 +35,7 @@ def test(config):
         tio.OneHot(config_test['num_classes'])
     ]
 
-    text_md = config_dict_to_markdown(config['test'], "Test config")
-    loggers.experiment.add_text(text_md, "Test config")
-    text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    loggers.experiment.add_text(text_md, "Registration model config")
-    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
-    text_md = config_dict_to_markdown(config['model_svf'], "MLP model config")
-    loggers.experiment.add_text(text_md, "MLP model config")
-    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='a')
+
 
 
     subjects = subjects_from_csv(config_test['csv_path'], age=True, lambda_age=lambda x: (x - config_test['t0']) / (config_test['t1'] - config_test['t0']))
@@ -67,16 +66,8 @@ def test(config):
         raise ValueError("Model initialization failed")
     mlp_model.eval().to(device)
     reg_net.eval().to(device)
-    '''
-    subjects_original_shape = (180, 221, 180)
 
-    reverse_transforms =tio.Compose([
-        tio.Resize(221),
-        tio.CropOrPad(target_shape=subjects_original_shape)
-    ])
-    '''
-
-    dice_score = DiceMetric(include_background=False, reduction="none")
+    dice_score = DiceMetric(include_background=True, reduction="none")
     with open(save_path + "/results.csv", mode='w') as file:
         header = ["time", "mDice", "Cortex", "Ventricule", "all"]
         writer = csv.DictWriter(file, fieldnames=header)
@@ -92,23 +83,18 @@ def test(config):
                 warped_source_label = reg_net.warp(source_label.float(), forward_flow)
                 warped_source_image = reg_net.warp(source_image.float(), forward_flow)
 
-                '''
-                new_subject = tio.Subject(
+                warped_source_subject = tio.Subject(
                     image=tio.ScalarImage(tensor=warped_source_image.detach().cpu().squeeze(0), affine=source['image'].affine),
                     label=tio.LabelMap(tensor=torch.argmax(torch.round(warped_source_label), dim=1).int().detach().cpu(), affine=source['label'].affine)
                 )
-                new_subject = reverse_transforms(new_subject)
-  
-                label_map = new_subject['label']
+
+                label_map = warped_source_subject['label']
                 label_map.save(save_path + "/" + str(i) + "_fused_source_label.nii.gz")
-                image_wrap = new_subject['image']
+                image_wrap = warped_source_subject['image']
                 image_wrap.save(save_path + "/" + str(i) + "_fused_source_image.nii.gz")
 
-                new_subject = transforms_onehot(new_subject)
-                target_inter = transforms_onehot(subjects_set_orig[i])
-
                 colored_error_seg = map_labels_to_colors(
-                    seg_map_error(new_subject["label"][tio.DATA].unsqueeze(0), target_inter["label"][tio.DATA].unsqueeze(0),
+                    seg_map_error(warped_source_subject["label"][tio.DATA].unsqueeze(0), warped_source_subject["label"][tio.DATA].unsqueeze(0),
                                   dim=1)).squeeze().permute(3, 0, 1, 2)
 
                 loggers.experiment.add_image("Atlas Sagittal Plane",
@@ -117,12 +103,12 @@ def test(config):
                                              TF.rotate(colored_error_seg[:, :, int(in_shape[1] / 2), :], 90), age)
                 loggers.experiment.add_image("Atlas Axial Plane",
                                              TF.rotate(colored_error_seg[:, :, :, int(in_shape[2] / 2)], 90), age)
-                '''
+
                 dice = dice_score(torch.round(warped_source_label).to(device),
                                   other_target["label"][tio.DATA].unsqueeze(0).float().to(device))
                 writer.writerow({
                     "time": age,
-                    "mDice": torch.mean(dice[0]).item(),
+                    "mDice": torch.mean(dice[0][1:]).item(),
                     "Cortex": torch.mean(dice[0][3:5]).item(),
                     "Ventricule": torch.mean(dice[0][7:9]).item(),
                     "all": dice[0].cpu().numpy()
@@ -138,6 +124,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images with MLP model')
     parser.add_argument('--config', type=str, help='Path to the config file', default='/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/SVF/MLP/config_test.json')
     args = parser.parse_args()
-    config = json.load(open(args.config))
-    test(config=config)
+    test(config=args.config)
 

@@ -5,7 +5,7 @@ from utils import Grad3d
 from torch import Tensor
 import torch.nn.functional as F
 from Registration.spatial_transformation import SpatialTransformer, VecInt
-
+from monai.networks.blocks import Warp
 
 class RegistrationModule(nn.Module):
     '''
@@ -17,9 +17,8 @@ class RegistrationModule(nn.Module):
         :param inshape: [int, int, int]
         '''
         super().__init__()
-        self.spatial_transformer = SpatialTransformer(size=inshape)
         self.model = model
-
+        self.spatial_transformer = SpatialTransformer(size=inshape)
 
     def forward(self, source: Tensor, target: Tensor) -> (Tensor, Tensor):
         '''
@@ -43,21 +42,22 @@ class RegistrationModule(nn.Module):
         loss_pair = torch.zeros((4)).float().to(device)
         target_image = target['image'][tio.DATA].to(device)
         source_image = source['image'][tio.DATA].to(device)
-        target_label = target['label'][tio.DATA].float().to(device).float()
-        source_label = source['label'][tio.DATA].float().to(device).float()
 
         if len(target_image.shape) == 4:
             target_image = target_image.unsqueeze(dim=0)
-            target_label = target_label.unsqueeze(dim=0)
         if len(source_image.shape) == 4:
             source_image = source_image.unsqueeze(dim=0)
-            source_label = source_label.unsqueeze(dim=0)
 
         if lambda_sim > 0:
             loss_pair[0] = sim_loss(target_image, self.warp(source_image, forward_flow)) + \
                            sim_loss(source_image, self.warp(target_image, backward_flow))
-
         if lambda_seg > 0:
+            target_label = target['label'][tio.DATA].float().to(device).float()
+            source_label = source['label'][tio.DATA].float().to(device).float()
+            if len(target_label.shape) == 4:
+                target_label = target_label.unsqueeze(dim=0)
+            if len(source_label.shape) == 4:
+                source_label = source_label.unsqueeze(dim=0)
             warped_source_label = self.warp(source_label.float(), forward_flow)
             warped_target_label = self.warp(target_label.float(), backward_flow)
             loss_pair[1] += F.mse_loss(target_label[:, 1::, ...].float(), warped_source_label[:, 1::, ...]) \
@@ -72,6 +72,7 @@ class RegistrationModule(nn.Module):
 
     def warp(self, tensor: Tensor, flow: Tensor) -> Tensor:
         return self.spatial_transformer(tensor, flow)
+
 
     @staticmethod
     def regularizer(disp, penalty='l2') -> Tensor:
@@ -89,7 +90,6 @@ class RegistrationModule(nn.Module):
 
         d = torch.mean(dx) + torch.mean(dy) + torch.mean(dz)
         return d / 3.0
-
 
 class RegistrationModuleSVF(RegistrationModule):
     '''

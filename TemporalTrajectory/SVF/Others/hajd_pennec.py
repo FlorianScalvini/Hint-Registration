@@ -88,7 +88,7 @@ def test(config):
     source_label = torch.unsqueeze(source["label"][tio.DATA], 0).to(device)
 
 
-    dice_score = DiceMetric(include_background=False, reduction="none")
+    dice_score = DiceMetric(include_background=True, reduction="none")
 
     with open(save_path + "/results.csv", mode='w') as file:
         header = ["time", "mDice", "Cortex", "Ventricule", "all"]
@@ -139,14 +139,14 @@ def test(config):
             """
             writer.writerow({
                 "time": age,
-                "mDice": torch.mean(dice[0]).item(),
+                "mDice": torch.mean(dice[0][1:]).item(),
                 "Cortex": torch.mean(dice[0][3:5]).item(),
                 "Ventricule": torch.mean(dice[0][7:9]).item(),
                 "all": dice[0].cpu().numpy()
             })
             loggers.experiment.add_scalar("Dice ventricule", torch.mean(dice[0][7:9]).item(), age)
             loggers.experiment.add_scalar("Dice cortex", torch.mean(dice[0][3:5]).item(), age)
-            loggers.experiment.add_scalar("mDice", torch.mean(dice[0]).item(), age)
+            loggers.experiment.add_scalar("mDice", torch.mean(dice[0][1:]).item(), age)
             print(age, torch.mean(dice).item())
 
 

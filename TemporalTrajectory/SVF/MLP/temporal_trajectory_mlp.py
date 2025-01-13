@@ -30,6 +30,7 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
         self.save_path = save_path
         self.num_inter_by_epoch = num_inter_by_epoch
         self.dice_metric = DiceMetric(include_background=False, reduction="none")
+        self.dice_max = 0 # Maximum dice score
 
     def forward(self, source: Tensor, target: Tensor, age: Tensor):
         velocity = self.regnet(source, target)
@@ -46,10 +47,12 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
         self.regnet.train()
         self.mlp.train()
 
+    def on_validation_start(self) -> None:
+        self.on_train_start()
 
     def on_train_start(self) -> None:
         self.counter_samples_indexes = np.zeros(len(self.trainer.train_dataloader.dataset.dataset)) # Counter for the number of times a sample has been used
-        self.dice_max = 0 # Maximum dice score
+
         # Get the t0 and t1 subjects
         for i in range(len(self.trainer.train_dataloader.dataset.dataset)):
             if self.trainer.train_dataloader.dataset.dataset[i]['age'] == 0:
@@ -61,10 +64,6 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
         self.subject_t1['image'][tio.DATA] = self.subject_t1['image'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
         self.subject_t1['label'][tio.DATA] = self.subject_t1['label'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
 
-        # Set model in train mode
-        self.regnet.train()
-        self.mlp.train()
-        self.trainer.loggers[0].experiment.add_graph(self, (self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA], torch.asarray([1.0]).to(self.device))) # Add graph to tensorboard
 
     def training_step(self, batch, batch_idx):
         # Compute the registration between T0 and T1
@@ -72,8 +71,8 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
         temporal_weight = torch.abs(self.mlp(torch.tensor([self.subject_t1['age']]).to(self.device))) # Compute the temporal weight
         forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity * temporal_weight) # Compute the flow
         loss_tensor = self.regnet.registration_loss(self.subject_t0, self.subject_t1, forward_flow, backward_flow, lambda_sim=self.lambda_sim, lambda_seg=self.lambda_seg, lambda_mag=self.lambda_mag, lambda_grad=self.lambda_grad) # Compute the loss between T0 and T1
-
         # Compute the loss between T0 and N random intermediate subjects
+        nb_inter = random.random() * self.num_inter_by_epoch
         index = random.sample(range(0, len(self.trainer.train_dataloader.dataset.dataset) - 2), self.num_inter_by_epoch)
         for i in index:
             subject = self.trainer.train_dataloader.dataset.dataset[i + 1]
@@ -92,58 +91,59 @@ class TemporalTrajectoryMLPSVF(pl.LightningModule):
         self.log("MLP t_0", loss_zero, prog_bar=True, on_epoch=True, sync_dist=True)
         return loss
 
-    def on_train_epoch_end(self):
-        # Set the model in evaluation mode
+    def validation_step(self, batch, batch_idx):
         self.regnet.eval()
         self.mlp.eval()
+        subject_t0 = None
+        subject_t1 = None
+        for i in range(len(self.trainer.val_dataloaders.dataset.dataset)):
+            if self.trainer.val_dataloaders.dataset.dataset[i]['age'] == 0:
+                subject_t0 = self.trainer.val_dataloaders.dataset.dataset[i]
+            if self.trainer.val_dataloaders.dataset.dataset[i]['age'] == 1:
+                subject_t1 = self.trainer.val_dataloaders.dataset.dataset[i]
+        subject_t0['image'][tio.DATA] = subject_t0['image'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
+        subject_t0['label'][tio.DATA] = subject_t0['label'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
+        subject_t1['image'][tio.DATA] = subject_t1['image'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
+        subject_t1['label'][tio.DATA] = subject_t1['label'][tio.DATA].float().unsqueeze(dim=0).to(self.device)
+        with torch.no_grad():
+            # Compute the velocity field between T0 and T1
+            velocity = self.regnet(subject_t0['image'][tio.DATA], subject_t1['image'][tio.DATA])
+            # Compute the DICE Score for each subject
+            for subject in self.trainer.train_dataloader.dataset.dataset:
+                temporal_weight = torch.abs(self.mlp(torch.tensor([subject['age']]).to(self.device)))
+                forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity * temporal_weight)
+                warped_source_label = self.regnet.warp(subject_t0['label'][tio.DATA].to(self.device).float(),
+                                                       forward_flow)
+                self.dice_metric(torch.round(warped_source_label),
+                                 subject['label'][tio.DATA].to(self.device).float().unsqueeze(0))
 
-        # Compute the DICE Score on the training set every 10 epochs
-        if self.current_epoch % 10 == 0:
-            with torch.no_grad():
+        # Compute the mean DICE Score
+        overall_dice = self.dice_metric.get_buffer()  # Compute the DICE Score
+        self.dice_metric.reset()  # Reset the dice metric
+        mean_dices = torch.mean(overall_dice).item()
 
-                # Compute the velocity field between T0 and T1
-                velocity = self.regnet(self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA])
-                temporal_weight = torch.abs(self.mlp(torch.tensor([1.0]).to(self.device)))
-                forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity=velocity * temporal_weight)
-                label_warped_source = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(), forward_flow)
-                image_warped_source = self.regnet.warp(self.subject_t0['image'][tio.DATA].to(self.device).float(), forward_flow)
-                tio.LabelMap(tensor=torch.argmax(label_warped_source, dim=1).int().detach().cpu().numpy(),
-                             affine=self.subject_t0['label'].affine).save(self.save_path +  "/label_warped_source.nii.gz")
-                tio.ScalarImage(tensor=image_warped_source.squeeze(0).detach().cpu().numpy(),
-                                affine=self.subject_t0['image'].affine).save(self.save_path + "/image_warped_source.nii.gz")
+        # Save the model if the DICE Score is better
+        if self.dice_max < mean_dices:
+            self.dice_max = mean_dices
+            print("New best dice:", self.dice_max)
+            torch.save(self.regnet.state_dict(), self.save_path + "/regnet_linear_best.pth")
+            torch.save(self.mlp.state_dict(), self.save_path + "/mlp_regnet_best.pth")
+        # Plot the temporal weight evolution between 0 and 1
+        x = np.arange(0, 1, 0.01)
+        y = []
+        x_label = []
+        for i in x:
+            temporal_weight = torch.abs(self.mlp(torch.asarray([i]).float().to(self.device)))
+            y.append(temporal_weight.detach().cpu().numpy())
+            x_label.append(i)
+        plt.figure(figsize=(10, 8))
+        plt.plot(x, y)
+        self.trainer.loggers[0].experiment.add_figure("Temporal MLP coefficient", plt.gcf(), global_step=0)
+        plt.close()
 
-                # Compute the DICE Score for each subject
-                for subject in self.trainer.train_dataloader.dataset.dataset:
-                    temporal_weight = torch.abs(self.mlp(torch.tensor([subject['age']]).to(self.device)))
-                    forward_flow, backward_flow = self.regnet.velocity_to_flow(velocity * temporal_weight)
-                    warped_source_label = self.regnet.warp(self.subject_t0['label'][tio.DATA].to(self.device).float(), forward_flow)
-                    self.dice_metric(torch.round(warped_source_label), subject['label'][tio.DATA].to(self.device).float().unsqueeze(0))
 
-                # Compute the mean DICE Score
-                overall_dice = self.dice_metric.aggregate() # Compute the DICE Score
-                self.dice_metric.reset() # Reset the dice metric
-                mean_dices = torch.mean(overall_dice).item()
-
-            # Save the model if the DICE Score is better
-            if self.dice_max < mean_dices:
-                self.dice_max = mean_dices
-                print("New best dice:", self.dice_max)
-                torch.save(self.regnet.state_dict(), self.save_path + "/regnet_linear_best.pth")
-                torch.save(self.mlp.state_dict(), self.save_path + "/mlp_regnet_best.pth")
-
-            # Plot the temporal weight evolution between 0 and 1
-            x = np.arange(0, 1, 0.01)
-            y = []
-            x_label = []
-            for i in x:
-                temporal_weight = torch.abs(self.mlp(torch.asarray([i]).float().to(self.device)))
-                y.append(temporal_weight.detach().cpu().numpy())
-                x_label.append(i)
-            plt.figure(figsize=(10, 8))
-            plt.plot(x, y)
-            self.trainer.loggers[0].experiment.add_figure("Temporal MLP coefficient", plt.gcf(), global_step=0)
-            plt.close()
-
+    def on_train_epoch_end(self):
+        # Set the model in evaluation mode
         # Save the model at the end of the epoch
         torch.save(self.regnet.state_dict(), self.save_path + "/last_regnet.pth")
         torch.save(self.mlp.state_dict(), self.save_path + "/last_mlp_model.pth")
