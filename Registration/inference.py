@@ -36,6 +36,7 @@ def main(arguments):
         tio.OneHot(arguments.num_classes)
     ])
 
+
     source_subject = tio.Subject(
         image=tio.ScalarImage(arguments.image_source),
         label=tio.LabelMap(arguments.label_source),
@@ -45,13 +46,19 @@ def main(arguments):
         image=tio.ScalarImage(arguments.image_target),
         label=tio.LabelMap(arguments.target_label),
     )
+
+    reverse_transform = tio.Compose([
+        tio.Resize(221),
+        tio.CropOrPad(target_shape=source_subject["image"][tio.DATA].shape[1:]),
+        tio.OneHot(arguments.num_classes)
+    ])
+
     source_subject = transforms(source_subject)
     target_subject = transforms(target_subject)
-    in_shape = source_subject["image"][tio.DATA].shape[1:]
 
     model = RegistrationModuleSVF(
         model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                strides=(2, 2)), inshape=in_shape, int_steps=7).eval().to(device)
+                                                strides=(2, 2)), inshape=source_subject["image"][tio.DATA].shape[1:], int_steps=7).eval().to(device)
     model.load_state_dict(torch.load(arguments.load))
 
     warped_source_img, warped_target_img, warped_source_label, warped_target_label = inference(source_subject, target_subject, model, device)

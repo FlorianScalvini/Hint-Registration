@@ -7,11 +7,10 @@ import torchio as tio
 from monai.metrics import DiceMetric
 from dataset import PairwiseSubjectsDataset
 from Registration import RegistrationModule, RegistrationModuleSVF
-from utils import get_cuda_is_available_or_cpu, get_model_from_string
+from utils import get_cuda_is_available_or_cpu
 
 def test(arguments):
     device = get_cuda_is_available_or_cpu()
-
     ## Config Subject
     transforms = tio.Compose([
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),

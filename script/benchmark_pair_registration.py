@@ -32,7 +32,7 @@ def _get_reverse_transform(resize_shape, croporpad_shape, num_classes):
         tio.OneHot(num_classes)
     ])
 
-def _compute_registration_dice_between_source_and_targets(model: RegistrationModule, dataset_path : str, source_image_path: str, source_label_path, rshape, crshape, num_classes, upsample, device : str):
+def _compute_registration_dice_between_source_and_targets(model: RegistrationModule, dataset_path : str, source_image_path: str, source_label_path, rshape, crshape, num_classes, device : str):
     source_subject = tio.Subject(
         image=tio.ScalarImage(source_image_path),
         label=tio.LabelMap(source_label_path)
@@ -49,27 +49,23 @@ def _compute_registration_dice_between_source_and_targets(model: RegistrationMod
     for subject in targets:
         transformed_subject = transform(subject)
         _, _, warped_source_label, _ = inference(source_subject_transformed, transformed_subject, model, device)
-        if upsample:
-            warped_source_label = reverse_transform(warped_source_label.squeeze(0).cpu()).unsqueeze(0).to(device)
-            target_label = subject["label"][tio.DATA].float().to(device).unsqueeze(0)
-        else:
-            target_label = transformed_subject["label"][tio.DATA].float().to(device).unsqueeze(0)
-
+        warped_source_label = reverse_transform(warped_source_label.squeeze(0).cpu()).unsqueeze(0).to(device)
+        target_label = subject["label"][tio.DATA].float().to(device).unsqueeze(0)
         dice = dice_metric(warped_source_label, target_label)[0]
         dice_metric.reset()
         dice_scores.append(dice.cpu().numpy())
     return np.vstack(dice_scores)
 
 
-def _compute_voxelmorph_like(dataset_path, source_image_path, source_label_path, model_path, inshape, orig_shape, num_classes, device):
+def _compute_voxelmorph_like(dataset_path, source_image_path, source_label_path, model_path, inshape, num_classes, device):
     model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32), strides=(2, 2)), inshape=(inshape, inshape, inshape), int_steps=7).eval().to(device)
     model.load_state_dict(torch.load(model_path))
-    return _compute_registration_dice_between_source_and_targets(model, dataset_path, source_image_path, source_label_path, inshape,  (221, 221, 221), num_classes, orig_shape, device)
+    return _compute_registration_dice_between_source_and_targets(model, dataset_path, source_image_path, source_label_path, inshape,  (221, 221, 221), num_classes, device)
 
 
-def _compute_unigradicon(dataset_path, source_image_path, source_label_path, device, num_classes, orig_shape=False):
+def _compute_unigradicon(dataset_path, source_image_path, source_label_path, device, num_classes):
     model = UniGradIcon()
-    return _compute_registration_dice_between_source_and_targets(model, dataset_path, source_image_path, source_label_path, (175, 175, 175), (221, 221, 221), num_classes, orig_shape, device)
+    return _compute_registration_dice_between_source_and_targets(model, dataset_path, source_image_path, source_label_path, (175, 175, 175), (221, 221, 221), num_classes, device)
 
 
 def _compute_ants(dataset_path, source_image_path, source_label_path, num_classes):
@@ -111,7 +107,7 @@ def main(arguments):
         scores["ANTS"] = _compute_ants(arguments.target, arguments.source, arguments.source_label, arguments.num_classes)
     if arguments.voxelmorph:
         scores["Voxelmorph-like"] = _compute_voxelmorph_like(arguments.target, arguments.source, arguments.source_label,
-                                                            arguments.load, arguments.vsize, arguments.upsample, arguments.num_classes, device)
+                                                            arguments.load, arguments.vsize, arguments.num_classes, device)
     with open("./results.csv", mode='w') as file:
         header = ["index", "Unigradicon", "ANTS", "Voxelmorph-like"]
         writer = csv.DictWriter(file, fieldnames=header)
@@ -125,10 +121,10 @@ def main(arguments):
     color = ["magenta", "peru", "green"]
     marker = ["D", "h", "x"]
 
-    x = [i for i in range(len(scores[next(iter(scores))]))]
+    x = [i for i in range(arguments.t0, arguments.t0 + len(scores[next(iter(scores))]))]
     for i in range(len(scores)):
         label = list(scores.keys())[i]
-        plt.plot(x,  np.mean(scores[label][:, 3:5], axis=1).tolist(), color=color[i], marker=marker[i], label=label)
+        plt.plot(x,  np.mean(scores[label][:, 1:], axis=1).tolist(), color=color[i], marker=marker[i], label=label)
         plt.legend()
     plt.show()
 
@@ -144,7 +140,7 @@ if __name__ == "__main__":
     parser.add_argument('--source_label', type=str, help='Path to the source image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz")
     parser.add_argument('--target', type=str, help='Path to the target images/labels', required=False, default="/home/florian/Documents/Programs/Hint-Registration/data/full_dataset.csv")
     parser.add_argument('--num_classes', type=int, help='Number of classes', required=False, default=20)
-    parser.add_argument('--upsample', type=bool, help='Upsample the warped image label to the original size', required=False, default=False)
+    parser.add_argument('--t0', type=str, help='T0', required=False, default=21)
     # Paramaters for Voxelmorph-like method
     parser.add_argument('--load', type=str, help='VoxelMorph-like network model path', required=False, default="/home/florian/Documents/Programs/Hint-Registration/Registration/Results/version_39/last_model.pth")
     parser.add_argument('--vsize', type=int, help='VoxelMorph-like network voxel size', required=False, default=128)

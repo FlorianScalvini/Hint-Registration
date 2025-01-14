@@ -1,7 +1,9 @@
 import os
+import json
 import monai
 import torch
 import torchvision
+from datetime import datetime
 from utils.transform import normalize_to_0_1
 
 
@@ -18,12 +20,17 @@ def create_new_versioned_directory(base_name='./version', start_version=0):
     print(f'Created repository version: {new_version}')
     return new_version
 
-def write_text_to_file(text, file_name, mode='w'):
-    '''
-        # Write text to a file
-    '''
-    with open(file_name, mode) as file:
-        file.write(text)
+
+def write_namespace_arguments(args, log_file='args_log.json'):
+    log_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "arguments": vars(args)
+    }
+
+    # If log file exists, append; else, create
+    with open(log_file, 'w') as file:
+        json.dump([log_entry], file, indent=4)
+
 
 # Create a new directory recursively if it does not exist
 def create_directory(directory):

@@ -80,13 +80,13 @@ def main(source_path, target_path, source_label_path, target_label_path):
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='MutliGradIcon Registration 3D Image Pair with pretrained network')
   parser.add_argument('-t', '--target', help='Target / Reference Image', type=str, required=False,
-                      default="../data/t1-t23.00.nii.gz")
+                      default="t1-t23.00.nii.gz")
   parser.add_argument('-s', '--source', help='Source / Moving Image', type=str, required=False,
-                      default="../data/t1-t23.00.nii.gz")
+                      default="t1-t23.00.nii.gz")
   parser.add_argument('-tl', '--target_label', help='Target / Reference Image', type=str, required=False,
-                      default="../data/t1-t23.00.nii.gz")
+                      default="t1-t23.00.nii.gz")
   parser.add_argument('-sl', '--source_label', help='Source / Moving Image', type=str, required=False,
-                      default="../data/t1-t23.00.nii.gz")
+                      default="t1-t23.00.nii.gz")
   args = parser.parse_args()
   main(args.source, args.target, args.source_label, args.target_label)
 

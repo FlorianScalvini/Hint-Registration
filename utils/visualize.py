@@ -31,15 +31,6 @@ def color_palette_20():
 
         ], dtype=np.uint8)
 
-def config_dict_to_markdown(config: dict, section: str = "Config"):
-    config_table = f"**{section}:**\n\n"  # Add bold title
-    config_table += "| Parameter           | Value         |\n"
-    config_table += "|---------------------|---------------|\n"
-    for key, value in config.items():
-        config_table += f"| {key}             | {value}       |\n"
-    # Log the configuration under the "Config" section
-    return config_table
-
 # Map labels to RGB colors
 def map_labels_to_colors(label_tensor, color_palette=color_palette_20()):
     """

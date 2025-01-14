@@ -1,8 +1,8 @@
 import sys
 sys.path.insert(0, "/home/florian/Documents/Programs/Hint-Registration")
 import os
-import json
 import torch
+import monai
 import argparse
 import numpy as np
 import torchio as tio
@@ -14,7 +14,7 @@ from monai.metrics import DiceMetric
 from dataset import PairwiseSubjectsDataset
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from Registration import RegistrationModuleSVF, RegistrationModule
-from utils import get_model_from_string, create_directory, write_text_to_file, config_dict_to_markdown
+from utils import create_directory, write_namespace_arguments
 
 
 class RegistrationTrainingModule(pl.LightningModule):
@@ -89,70 +89,72 @@ class RegistrationTrainingModule(pl.LightningModule):
         return loss
 
 
-def train(config):
-    config_train = config['train']
-
+def train(args):
     ## Config Dataset / Dataloader
-    train_transform = tio.Compose([
+    train_transforms = tio.Compose([
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
         tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(config_train['inshape']),
-        tio.OneHot(config_train['num_classes']),
+        tio.Resize(args.inshape),
+        tio.OneHot(args.num_classes)
     ])
 
     ## Dateset's configuration : Load a pairwise dataset and the dataloader
-    dataset = PairwiseSubjectsDataset(dataset_path=config_train['csv_path'], transform=train_transform, age=False)
+    dataset = PairwiseSubjectsDataset(dataset_path=args.csv, transform=train_transforms, age=False)
     loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8)
-
     in_shape = dataset.dataset[0]['image'][tio.DATA].shape[1:]
 
     ## Model initialization and weights loading if needed
     try:
-        model = RegistrationModuleSVF(model=get_model_from_string(config['model_reg']['model'])(**config['model_reg']['args']), inshape=in_shape, int_steps=7)
-        if "load" in config_train and config_train['load'] != "":
-            state_dict = torch.load(config_train['load'])
-            model.load_state_dict(state_dict)
+        model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32], strides=[2,2]), inshape=in_shape, int_steps=7)
+        if args.load != "":
+            model.load_state_dict(torch.load(args.load))
     except:
         raise ValueError("Model initialization failed")
 
 
     ## Config training with hyperparameters
     trainer_args = {
-        'max_epochs': config_train['epochs'],
-        'precision': config_train['precision'],
-        'accumulate_grad_batches': config_train['accumulate_grad_batches'],
-        'logger': pl.loggers.TensorBoardLogger(save_dir= "./" + config_train['logger'], name=None),
+        'max_epochs': args.epochs,
+        'precision': args.precision,
+        'strategy': DDPStrategy(find_unused_parameters=True),
+        'accumulate_grad_batches': args.accumulate_grad_batches,
+        'logger': pl.loggers.TensorBoardLogger(save_dir= "./log", name=None),
         'check_val_every_n_epoch': 20
     }
-    trainer_reg = pl.Trainer(**trainer_args)
 
-    save_path = trainer_args['logger'].log_dir.replace(config_train['logger'], "Results")
+    save_path = trainer_args['logger'].log_dir.replace("log", "Results")
     create_directory(save_path)
-
-
-
-    # Log the config file
-    text_md = config_dict_to_markdown(config_train, "Test config")
-    trainer_reg.logger.experiment.add_text(text_md, "Test config")
-    text_md = config_dict_to_markdown(config['model_reg'], "Registration model config")
-    trainer_reg.logger.experiment.add_text(text_md, "Registration model config")
-    write_text_to_file(text_md, os.path.join(save_path, "config.md"), mode='w')
+    write_namespace_arguments(args, log_file=os.path.join(save_path, "config.json"))
 
     # Train the model
-    training_module = RegistrationTrainingModule(model=model,
-                                                 lambda_sim=config_train['lam_l'],
-                                                 lambda_seg=config_train['lam_s'],
-                                                 lambda_mag=config_train['lam_m'],
-                                                 lambda_grad=config_train['lam_g'],
-                                                 save_path=save_path)
-    trainer_reg.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
+    training_module = RegistrationTrainingModule(
+        model=model,
+        lambda_sim=args.lam_l,
+        lambda_seg=args.lam_s,
+        lambda_mag=args.lam_m,
+        lambda_grad=args.lam_g,
+        save_path=save_path
+    )
+    training_module.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
     torch.save(training_module.model.state_dict(), os.path.join(save_path + "/final_model_reg.pth"))
 
 
+# %% Main program
 if __name__ == '__main__':
-    torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description='Train Registration 3D Images')
-    parser.add_argument('--config', type=str, help='Path to the config file', default='./config.json')
+    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../../data/full_dataset.csv')
+    parser.add_argument('--epochs', type=int, help='Number of epochs', default=15000)
+    parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=4)
+    parser.add_argument('--loss', type=str, help='Loss function', default='mse')
+    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=1)
+    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=1)
+    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.001)
+    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.005)
+    parser.add_argument('--precision', type=int, help='Precision', default=32)
+    parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
+    parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
+    parser.add_argument('--inshape', type=int, help='Input shape', default=128)
+    parser.add_argument('--load', type=str, help='Load registration model', default='')
     args = parser.parse_args()
-    config = json.load(open(args.config))
-    train(config=config)
+    torch.set_float32_matmul_precision('high')
+    train(args=args)
