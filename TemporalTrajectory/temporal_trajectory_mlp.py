@@ -1,12 +1,12 @@
 import random
 import torchio as tio
-from network import MLP
+from .network import MLP
 from torch import Tensor
 from utils.loss import *
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from Registration import RegistrationModuleSVF
-from temporal_trajectory import TemporalTrajectorySVF
+from .temporal_trajectory import TemporalTrajectorySVF
 
 class TemporalTrajectoryMLPSVF(TemporalTrajectorySVF):
     '''

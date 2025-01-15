@@ -1,3 +1,2 @@
 from .registration_module import RegistrationModuleSVF, RegistrationModule
-from .wrapper_unigradicon import UniGradIconRegistrationWrapper
 from .spatial_transformation import SpatialTransformer, VecInt

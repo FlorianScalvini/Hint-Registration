@@ -2,28 +2,22 @@
 # -*- coding: utf-8 -*-
 
 import os
-import json
+import sys
 import torch
 import monai
-import shutil
 import argparse
 import torchio as tio
-from network import MLP
 import pytorch_lightning as pl
+
+sys.path.insert(0, ".")
+from network import MLP
 from dataset import OneWrappedSubjectDataset
 from Registration import RegistrationModuleSVF
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from utils import create_directory, write_namespace_arguments
-from temporal_trajectory_mlp import TemporalTrajectoryMLPSVF, TemporalTrajectorySVF
-
-
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-
+from TemporalTrajectory.temporal_trajectory_mlp import TemporalTrajectoryMLPSVF, TemporalTrajectorySVF
 
 def train_main(args):
-
-
     ## Config Dataset / Dataloader
     train_transforms = tio.Compose([
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
@@ -31,7 +25,6 @@ def train_main(args):
         tio.Resize(args.inshape),
         tio.OneHot(args.num_classes)
     ])
-
 
     ## Config model
     # get the spatial dimension of the data (3D)
@@ -100,7 +93,7 @@ def train_main(args):
 # %% Main program
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images with MLP model')
-    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../../data/full_dataset.csv')
+    parser.add_argument('--csv', type=str, help='Path to the csv file', default='./data/full_dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
     parser.add_argument('--epochs', type=int, help='Number of epochs', default=15000)
@@ -119,7 +112,6 @@ if __name__ == '__main__':
     parser.add_argument('--mlp_hidden_size', type=int, nargs='+', help='Hidden size of the MLP model', default=[1, 32, 32, 32, 1])
     parser.add_argument('--load', type=str, help='Load registration model', default='')
     parser.add_argument('--load_mlp', type=str, help='Load MLP model', default='')
-
     args = parser.parse_args()
     torch.set_float32_matmul_precision('high')
     train_main(args=args)

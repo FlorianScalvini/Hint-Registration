@@ -1,10 +1,13 @@
+import sys
 import torch
 import argparse
-import numpy as np
 import torchio as tio
 from torch import Tensor
 from monai.metrics import DiceMetric
 from unigradicon import get_unigradicon
+
+sys.path.insert(0, ".")
+
 from icon_registration.mermaidlite import compute_warped_image_multiNC
 from Registration.registration_module import RegistrationModule
 
@@ -24,21 +27,18 @@ class UniGradIcon(RegistrationModule):
 
 
 def main(source_subject, target_subject):
-    transform = tio.Compose(
-        (
-            # Clamp intensities to the 1st and 99th percentiles
-            tio.transforms.RescaleIntensity(percentiles=(0.1, 99.9)),
-            tio.transforms.Clamp(out_min=0, out_max=1),
-            tio.transforms.CropOrPad(target_shape=192),
-            tio.Resize(target_shape=(175, 175, 175)),
-            tio.OneHot(num_classes=20)
-        )
-    )
+
+    transforms = tio.Compose([
+        tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
+        tio.transforms.CropOrPad(target_shape=221),
+        tio.Resize(args.inshape),
+        tio.OneHot(args.num_classes)
+    ])
 
     model = UniGradIcon()
     model.cuda()
-    source_subject = transform(source_subject)
-    target_subject = transform(target_subject)
+    source_subject = transforms(source_subject)
+    target_subject = transforms(target_subject)
     forward_flow, backward_flow = model.forward_backward_flow_registration(source_subject["image"][tio.DATA].float().unsqueeze(0).cuda(), target_subject["image"][tio.DATA].float().unsqueeze(0).cuda())
 
     warped_source = model.warp(source_subject["image"][tio.DATA].float().cuda().unsqueeze(0), forward_flow)
@@ -82,7 +82,6 @@ if __name__ == "__main__":
         image=tio.ScalarImage(args.target),
         label=tio.LabelMap(args.target_label),
     )
-
 
     main(source_subject, target_subject)
 

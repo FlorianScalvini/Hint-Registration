@@ -2,13 +2,15 @@
 # -*- coding: utf-8 -*-
 import os.path
 import csv
-import json
+import sys
 import monai
 import torch
 import argparse
 import torchio as tio
 import pytorch_lightning as pl
 from monai.metrics import DiceMetric
+
+sys.path.insert(0, ".")
 from dataset import subjects_from_csv
 from temporal_trajectory_mlp import MLP
 import torchvision.transforms.functional as TF
@@ -20,6 +22,7 @@ def test(args):
     loggers = pl.loggers.TensorBoardLogger(save_dir= "./log" , name=None)
     save_path = loggers.log_dir.replace('log', "Results")
     create_directory(save_path)
+    write_namespace_arguments(args, log_file=os.path.join(save_path, "config.json"))
 
     ## Config Dataset / Dataloader
     transforms = tio.Compose([

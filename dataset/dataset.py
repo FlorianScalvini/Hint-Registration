@@ -1,4 +1,3 @@
-import torch
 import torchio as tio
 import pandas as pd
 

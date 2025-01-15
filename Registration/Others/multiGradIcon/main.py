@@ -1,3 +1,4 @@
+import sys
 import torch
 import argparse
 import torchio as tio
@@ -5,6 +6,8 @@ from torch import Tensor
 from monai.metrics import DiceMetric
 from unigradicon import get_multigradicon
 from icon_registration.mermaidlite import compute_warped_image_multiNC
+
+sys.path.insert(0, ".")
 from Registration.registration_module import RegistrationModule
 
 class MultiGradIcon(RegistrationModule):

@@ -6,7 +6,7 @@ import numpy as np
 import torchio as tio
 from torch import Tensor
 from monai.metrics import DiceMetric
-from Registration import RegistrationModuleSVF, RegistrationModule
+from registration_module import RegistrationModuleSVF, RegistrationModule
 from utils import get_cuda_is_available_or_cpu
 
 

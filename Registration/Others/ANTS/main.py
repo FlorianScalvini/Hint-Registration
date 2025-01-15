@@ -1,12 +1,7 @@
 import ants
 import argparse
-import shutil
-
 import numpy as np
-
-from scipy.io import loadmat
 from monai.metrics import DiceMetric
-from Registration.registration_module import RegistrationModule
 
 
 

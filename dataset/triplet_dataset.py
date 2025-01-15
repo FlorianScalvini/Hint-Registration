@@ -1,11 +1,8 @@
 import torch
 import random
-import itertools
-import pandas as pd
 import torchio as tio
-from dataset.pairwise_subject import PairwiseSubjectsDataset
-from dataset.subject_dataset import subjects_from_csv
-from torch.utils.data import Dataset, DataLoader
+from .pairwise_subject import PairwiseSubjectsDataset
+from .subject_dataset import subjects_from_csv
 
 
 class TripletStaticAnchorsDataset(torch.utils.data.Dataset):

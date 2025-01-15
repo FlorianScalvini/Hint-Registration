@@ -1,4 +1,5 @@
 import csv
+import sys
 import ants
 import json
 import torch
@@ -8,11 +9,11 @@ import numpy as np
 import pandas as pd
 import torchio as tio
 import matplotlib.pyplot as plt
-from utils import create_directory
+sys.path.insert(0, ".")
 from monai.metrics import DiceMetric
 from dataset import WrappedSubjectDataset
 from Registration.inference import inference
-from Others.Registration.uniGradIcon.main import UniGradIcon
+from Registration.Others.uniGradIcon.main import UniGradIcon
 from Registration import RegistrationModule, RegistrationModuleSVF
 
 

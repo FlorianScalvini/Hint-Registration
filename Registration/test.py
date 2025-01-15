@@ -1,3 +1,4 @@
+import sys
 import json
 import torch
 import monai
@@ -5,9 +6,10 @@ import argparse
 import numpy as np
 import torchio as tio
 from monai.metrics import DiceMetric
+sys.path.insert(0, ".")
 from dataset import PairwiseSubjectsDataset
-from Registration import RegistrationModule, RegistrationModuleSVF
 from utils import get_cuda_is_available_or_cpu
+from registration_module import RegistrationModule, RegistrationModuleSVF
 
 def test(arguments):
     device = get_cuda_is_available_or_cpu()
@@ -54,7 +56,7 @@ def test(arguments):
 if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description='Test Registration 3D Images')
-    parser.add_argument("--csv_path", type=str, help="Path to the csv file", required=False, default="../data/full_dataset.csv")
+    parser.add_argument("--csv_path", type=str, help="Path to the csv file", required=False, default="./data/full_dataset.csv")
     parser.add_argument("--load", type=str, help="Path to the model weights", required=False, default="./Results/version_32/last_model.pth")
     parser.add_argument("--save_path", type=str, help="Path to save the results", required=False, default="./Results/")
     parser.add_argument("--logger", type=str, help="Logger to use", required=False, default="log")

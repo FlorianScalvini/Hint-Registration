@@ -1,6 +1,6 @@
 import torch.utils.data
 import torchio as tio
-from dataset.subject_dataset import subjects_from_csv
+from .subject_dataset import subjects_from_csv
 from typing import Callable, List
 import itertools
 import random

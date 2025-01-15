@@ -1,6 +1,5 @@
-import sys
-sys.path.insert(0, "/home/florian/Documents/Programs/Hint-Registration")
 import os
+import sys
 import torch
 import monai
 import argparse
@@ -11,9 +10,11 @@ from torch import Tensor
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from monai.metrics import DiceMetric
+
+sys.path.insert(0, ".")
 from dataset import PairwiseSubjectsDataset
 from pytorch_lightning.strategies.ddp import DDPStrategy
-from Registration import RegistrationModuleSVF, RegistrationModule
+from registration_module import RegistrationModuleSVF, RegistrationModule
 from utils import create_directory, write_namespace_arguments
 
 
@@ -135,14 +136,15 @@ def train(args):
         lambda_grad=args.lam_g,
         save_path=save_path
     )
-    training_module.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
+    trainer = pl.Trainer(**trainer_args)
+    trainer.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
     torch.save(training_module.model.state_dict(), os.path.join(save_path + "/final_model_reg.pth"))
 
 
 # %% Main program
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Registration 3D Images')
-    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../../data/full_dataset.csv')
+    parser.add_argument('--csv', type=str, help='Path to the csv file', default='./data/full_dataset.csv')
     parser.add_argument('--epochs', type=int, help='Number of epochs', default=15000)
     parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=4)
     parser.add_argument('--loss', type=str, help='Loss function', default='mse')
