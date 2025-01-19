@@ -1,18 +1,16 @@
 import os
 import csv
-import json
 import monai
 import torch
 import argparse
 import itertools
-import numpy as np
 import torchio as tio
 import pytorch_lightning as pl
 from monai.metrics import DiceMetric
 from dataset import subjects_from_csv
 from Registration import RegistrationModuleSVF
 import torchvision.transforms.functional as TF
-from utils import get_cuda_is_available_or_cpu, normalize_to_0_1, create_directory, map_labels_to_colors, seg_map_error, write_namespace_arguments
+from utils import get_cuda_is_available_or_cpu, create_directory, map_labels_to_colors, seg_map_error, write_namespace_arguments
 
 
 NUM_CLASSES = 20
@@ -33,8 +31,7 @@ def test(args):
         tio.OneHot(args.num_classes)
     ])
 
-
-
+    subject_t0 = None
     subjects_list = subjects_from_csv(dataset_path=args.csv, lambda_age=lambda x: (x -args.t0) / (args.t1 - args.t0))
     subjects_dataset_transformed = tio.SubjectsDataset(subjects_list, transform=transforms)
     subjects_dataset = tio.SubjectsDataset(subjects_list, transform=None)

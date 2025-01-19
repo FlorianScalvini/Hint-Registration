@@ -109,7 +109,7 @@ def main(arguments):
     if arguments.voxelmorph:
         scores["Voxelmorph-like"] = _compute_voxelmorph_like(arguments.target, arguments.source, arguments.source_label,
                                                             arguments.load, arguments.vsize, arguments.num_classes, device)
-    with open("./results.csv", mode='w') as file:
+    with open("./results_pairwise.csv", mode='w') as file:
         header = ["index", "Unigradicon", "ANTS", "Voxelmorph-like"]
         writer = csv.DictWriter(file, fieldnames=header)
         writer.writeheader()

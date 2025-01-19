@@ -12,9 +12,9 @@ from monai.metrics import DiceMetric
 
 sys.path.insert(0, ".")
 from dataset import subjects_from_csv
-from temporal_trajectory_mlp import MLP
 import torchvision.transforms.functional as TF
 from Registration import RegistrationModuleSVF
+from LongitudinalDeformation import OurLongitudinalDeformation, HadjHamouLongitudinalDeformation
 from utils import get_cuda_is_available_or_cpu, create_directory, seg_map_error, map_labels_to_colors, write_namespace_arguments
 
 def test(args):
@@ -51,16 +51,19 @@ def test(args):
             target_subject = s
 
     # Load models
-    reg_model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32], strides=[2,2]), inshape=in_shape, int_steps=7)
-    reg_model.load_state_dict(torch.load(args.load))
-    reg_model.eval().to(device)
-
-    mlp_model = None
+    model = OurLongitudinalDeformation(
+        reg_model=RegistrationModuleSVF(
+            model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32],
+                                                    strides=[2, 2]), inshape=in_shape, int_steps=7),
+        mode=args.mode,
+        hidden_mlp_layer=args.mlp_hidden_size,
+        t0=args.t0,
+        t1=args.t1
+    )
+    model.eval().to(device)
+    model.reg_model.load_state_dict(torch.load(args.load))
     if args.mode == 'mlp':
-        mlp_model = MLP(hidden_size=args.mlp_hidden_size)
-        mlp_model.load_state_dict(torch.load(args.load_mlp))
-        mlp_model.eval().to(device)
-
+        model.mlp_model.load_state_dict(torch.load(args.load_mlp))
     dice_metric = DiceMetric(include_background=True, reduction="none")
     with open(save_path + "/results.csv", mode='w') as file:
         header = ["time", "mDice", "Cortex", "Ventricule", "all"]
@@ -71,17 +74,13 @@ def test(args):
             target_subject = transforms(target_subject)
             source_image = torch.unsqueeze(source_subject["image"][tio.DATA], 0).to(device)
             source_label = torch.unsqueeze(source_subject["label"][tio.DATA], 0).to(device)
-            velocity = reg_model(source_image, torch.unsqueeze(target_subject["image"][tio.DATA], 0).to(device).float())
+            _ = model.forward((source_image, torch.unsqueeze(target_subject["image"][tio.DATA], 0).to(device).float()))
             for target_subject in subjects_dataset:
                 age = int(target_subject['age'] * (args.t1 - args.t0) + args.t0)
                 transformed_target_subject = transforms(target_subject)
-                if args.mode == 'mlp':
-                    weighted_age = mlp_model(torch.tensor([transformed_target_subject['age']]).to(device))
-                else:
-                    weighted_age = transformed_target_subject['age']
-                forward_flow, backward_flow = reg_model.velocity_to_flow(velocity=velocity * weighted_age)
-                warped_source_label = reg_model.warp(source_label.float(), forward_flow)
-                warped_source_image = reg_model.warp(source_image.float(), forward_flow)
+                forward_flow, backward_flow = model.getDeformationFieldFromTime(transformed_target_subject['age'])
+                warped_source_label = model.reg_model.warp(source_label.float(), forward_flow)
+                warped_source_image = model.reg_model.warp(source_image.float(), forward_flow)
                 warped_subject = tio.Subject(
                     image=tio.ScalarImage(tensor=warped_source_image.detach().cpu().squeeze(0), affine=source_subject['image'].affine),
                     label=tio.LabelMap(tensor=torch.argmax(torch.round(warped_source_label), dim=1).int().detach().cpu(), affine=source_subject['label'].affine)
