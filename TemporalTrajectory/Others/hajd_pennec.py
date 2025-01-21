@@ -4,7 +4,7 @@ import monai
 import torch
 import argparse
 import itertools
-import torchio as tio
+import torchio2 as tio
 import pytorch_lightning as pl
 from monai.metrics import DiceMetric
 from dataset import subjects_from_csv

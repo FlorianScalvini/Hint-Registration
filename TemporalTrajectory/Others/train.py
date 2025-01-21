@@ -1,5 +1,5 @@
 import torch
-import torchio as tio
+import torchio2 as tio
 from Registration import RegistrationModuleSVF
 from TemporalTrajectory.temporal_trajectory import TemporalTrajectorySVF
 

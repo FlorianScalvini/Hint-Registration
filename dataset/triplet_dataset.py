@@ -1,6 +1,6 @@
 import torch
 import random
-import torchio as tio
+import torchio2 as tio
 from .pairwise_subject import PairwiseSubjectsDataset
 from .subject_dataset import subjects_from_csv
 

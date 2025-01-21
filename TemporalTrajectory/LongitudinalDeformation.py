@@ -1,7 +1,6 @@
 import torch
 import itertools
-import torchio as tio
-
+import torchio2 as tio
 from Registration import RegistrationModuleSVF
 from TemporalTrajectory.network import MLP
 
@@ -14,9 +13,8 @@ class LongitudinalDeformation(torch.nn.Module):
     def forward(self, data):
         return NotImplemented
 
-
-    def getDeformationFieldFromTime(self, time: float):
-        return NotImplemented
+    def getDeformationFieldFromTime(self, velocity: torch.Tensor, time: float):
+        return self.reg_model.velocity_to_flow(velocity * time)
 
     def loads(self, path):
         return NotImplemented
@@ -28,7 +26,6 @@ class HadjHamouLongitudinalDeformation(LongitudinalDeformation):
         self.reg_model = reg_model
         self.device=device
         self.velocity = None
-
 
     def forward(self, data: tio.SubjectsDataset):
         denum = 0
@@ -44,26 +41,23 @@ class HadjHamouLongitudinalDeformation(LongitudinalDeformation):
                                              sample_j['image'][tio.DATA].unsqueeze(dim=0).float().to(self.device))
                 num += velocity_ij * time_ij
                 denum += time_ij * time_ij
-            self.velocity = num / denum if denum != 0 else torch.zeros_like(num)
-        return self.velocity
+            velocity = num / denum if denum != 0 else torch.zeros_like(num)
+        return velocity
 
     def loads(self, path):
         self.reg_model.load_state_dict(torch.load(path))
 
-    def getDeformationFieldFromTime(self, time: float):
-        return self.reg_model.velocity_to_flow(self.velocity * time)
 
 
 class OurLongitudinalDeformation(LongitudinalDeformation):
+
     def __init__(self, reg_model : RegistrationModuleSVF, mode: str, hidden_mlp_layer: list[int] | None, t0: int, t1: int):
         super().__init__(t0=t0, t1=t1)
-        self.velocity = None
         self.reg_model = reg_model
         self.mode = mode
         self.mlp_model = None
         if self.mode == 'mlp' and hidden_mlp_layer is not None:
             self.mlp_model = MLP(hidden_size=hidden_mlp_layer)
-
 
     def forward(self, data : (torch.Tensor, torch.Tensor)):
         source, target = data
@@ -71,13 +65,20 @@ class OurLongitudinalDeformation(LongitudinalDeformation):
             source = source.unsqueeze(0)
         if len(target.shape) == 4:
             target = target.unsqueeze(0)
-        self.velocity = self.reg_model.forward(source, target)
-        return self.velocity
+        velocity = self.reg_model.forward(source, target)
+        return velocity
 
-    def getDeformationFieldFromTime(self, time: float):
+    def getDeformationFieldFrom2Times(self, velocity: torch.Tensor, time_a: float, time_b: float):
+        if 'mode' == 'mlp':
+            time_a = torch.abs(self.mlp_model.forward(torch.asarray([time_a])))
+            time_b = torch.abs(self.mlp_model.forward(torch.asarray([time_a])))
+        return self.reg_model.velocity_to_flow(velocity=velocity * (time_b - time_a))
+
+
+    def getDeformationFieldFromTime(self, velocity: torch.Tensor, time: float):
         if 'mode' == 'mlp':
             time = torch.abs(self.mlp_model.forward(torch.asarray([time])))
-        return self.reg_model.velocity_to_flow(velocity=self.velocity * time)
+        return self.reg_model.velocity_to_flow(velocity=velocity * time)
 
     def loads(self, path, path_mlp=None):
         state_dict = torch.load(path)

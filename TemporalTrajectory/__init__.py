@@ -1,3 +1,1 @@
 from .network import MLP
-from .temporal_trajectory import TemporalTrajectorySVF
-from .temporal_trajectory_mlp import TemporalTrajectoryMLPSVF

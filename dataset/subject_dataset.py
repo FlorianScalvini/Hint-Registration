@@ -1,7 +1,7 @@
 import torch
 import random
 import pandas as pd
-import torchio as tio
+import torchio2 as tio
 from typing import Callable, List
 
 
@@ -55,7 +55,7 @@ class RandomSubjectsDataset(torch.utils.data.Dataset):
         return {str(i): self.dataset[sample[i]] for i in range(self.num_elem)}
 
 
-class WrappedSubjectDataset(torch.utils.data.Dataset):
+class WrappedSubjectDataset(tio.SubjectsDataset):
     '''
         Torch dataset that return a subject
         Args:
@@ -67,15 +67,15 @@ class WrappedSubjectDataset(torch.utils.data.Dataset):
         if lambda_age is None:
             lambda_age = lambda x: x
         subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
-        self.dataset = tio.SubjectsDataset(subjects, transform=transform)
+        super().__init__(subjects, transform=transform)
 
     def __len__(self) -> int:
-        return len(self.dataset)
+        return tio.SubjectsDataset.__len__(self)
 
     def __getitem__(self, idx) -> tio.Subject:
-        return self.dataset[idx]
+        return tio.SubjectsDataset.__getitem__(self, idx)
 
-class OneWrappedSubjectDataset(torch.utils.data.Dataset):
+class OneWrappedSubjectDataset(tio.SubjectsDataset):
     '''
         Torch dataset that return a subject with dataset size = 1
         Args:
@@ -87,10 +87,11 @@ class OneWrappedSubjectDataset(torch.utils.data.Dataset):
         if lambda_age is None:
             lambda_age = lambda x: x
         subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
-        self.dataset = tio.SubjectsDataset(subjects, transform=transform)
+        super().__init__(subjects, transform=transform)
+        self.num_subjects = len(subjects)
 
     def __len__(self) -> int:
         return 1
 
     def __getitem__(self, idx) -> tio.Subject:
-        return self.dataset[idx]
+        return tio.SubjectsDataset.__getitem__(self, idx)

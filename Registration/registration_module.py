@@ -1,11 +1,7 @@
 import torch
-import torchio as tio
 import torch.nn as nn
-from utils import Grad3d
 from torch import Tensor
-import torch.nn.functional as F
 from Registration.spatial_transformation import SpatialTransformer, VecInt
-from monai.networks.blocks import Warp
 
 class RegistrationModule(nn.Module):
     '''
@@ -33,42 +29,6 @@ class RegistrationModule(nn.Module):
         Returns the forward and backward flow
         '''
         return self.forward(source, target), self.forward(target, source)
-
-
-    def registration_loss(self, source: tio.Subject, target: tio.Subject, forward_flow: Tensor, backward_flow: Tensor, sim_loss=nn.MSELoss(), lambda_sim : float = 1, lambda_seg : float = 1, lambda_mag : float = 1, lambda_grad : float = 1,  device='cuda') -> Tensor:
-        '''
-            Compute the registration loss for a pair of subjects
-        '''
-        loss_pair = torch.zeros((4)).float().to(device)
-        target_image = target['image'][tio.DATA].to(device)
-        source_image = source['image'][tio.DATA].to(device)
-
-        if len(target_image.shape) == 4:
-            target_image = target_image.unsqueeze(dim=0)
-        if len(source_image.shape) == 4:
-            source_image = source_image.unsqueeze(dim=0)
-
-        if lambda_sim > 0:
-            loss_pair[0] = sim_loss(target_image, self.warp(source_image, forward_flow)) + \
-                           sim_loss(source_image, self.warp(target_image, backward_flow))
-        if lambda_seg > 0:
-            target_label = target['label'][tio.DATA].float().to(device).float()
-            source_label = source['label'][tio.DATA].float().to(device).float()
-            if len(target_label.shape) == 4:
-                target_label = target_label.unsqueeze(dim=0)
-            if len(source_label.shape) == 4:
-                source_label = source_label.unsqueeze(dim=0)
-            warped_source_label = self.warp(source_label.float(), forward_flow)
-            warped_target_label = self.warp(target_label.float(), backward_flow)
-            loss_pair[1] += F.mse_loss(target_label[:, 1::, ...].float(), warped_source_label[:, 1::, ...]) \
-                            + F.mse_loss(source_label[:, 1::, ...].float(), warped_target_label[:, 1::, ...])
-        if lambda_mag > 0:
-            loss_pair[2] += (F.mse_loss(torch.zeros(forward_flow.shape, device=device), forward_flow) + F.mse_loss(torch.zeros(backward_flow.shape, device=device), backward_flow))
-
-        if lambda_grad > 0:
-            loss_pair[3] += self.regularizer(forward_flow, penalty='l2').to(device) + \
-                            self.regularizer(backward_flow, penalty='l2').to(device)
-        return loss_pair
 
     def warp(self, tensor: Tensor, flow: Tensor) -> Tensor:
         return self.spatial_transformer(tensor, flow)

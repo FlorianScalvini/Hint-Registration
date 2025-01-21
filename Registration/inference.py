@@ -1,12 +1,10 @@
-import json
+
 import torch
 import monai
 import argparse
-import numpy as np
-import torchio as tio
-from torch import Tensor
+import torchio2 as tio
 from monai.metrics import DiceMetric
-from registration_module import RegistrationModuleSVF, RegistrationModule
+from Registration.registration_module import RegistrationModuleSVF, RegistrationModule
 from utils import get_cuda_is_available_or_cpu
 
 

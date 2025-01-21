@@ -1,4 +1,4 @@
-import torchio as tio
+import torchio2 as tio
 import pandas as pd
 
 

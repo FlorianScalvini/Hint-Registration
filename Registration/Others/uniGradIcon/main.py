@@ -1,7 +1,7 @@
 import sys
 import torch
 import argparse
-import torchio as tio
+import torchio2 as tio
 from torch import Tensor
 from monai.metrics import DiceMetric
 from unigradicon import get_unigradicon
