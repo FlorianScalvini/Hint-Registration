@@ -53,13 +53,16 @@ class RegistrationTrainingModule(pl.LightningModule):
         loss_tensor = self.registration_loss(source, target, forward_flow, backward_flow)
         loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Similitude", loss_tensor[0] * self.lambda_sim, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Magnitude", self.lambda_mag * loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Gradient", self.lambda_grad * loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
         return loss
 
     def registration_loss(self, source: tio.Subject, target: tio.Subject, forward_flow: Tensor, backward_flow: Tensor) -> Tensor:
+        '''
+            Compute the registration loss for a pair of subjects
+        '''
         '''
             Compute the registration loss for a pair of subjects
         '''
@@ -73,26 +76,24 @@ class RegistrationTrainingModule(pl.LightningModule):
             source_image = source_image.unsqueeze(dim=0)
 
         if self.lambda_sim > 0:
-            loss_pair[0] = F.mse_loss(target_image, self.model.warp(source_image, forward_flow)) + \
-                           F.mse_loss(source_image, self.model.warp(target_image, backward_flow))
+            loss_pair[0] =  (self.sim_loss(self.model.warp(source_image, forward_flow), target_image) +
+                             self.sim_loss(self.model.warp(target_image, backward_flow), source_image))
 
         if self.lambda_seg > 0:
-            target_label = target['label'][tio.DATA].to(self.device).float()
-            source_label = source['label'][tio.DATA].to(self.device).float()
+            target_label = target['label'][tio.DATA].float().to(self.device)
+            source_label = source['label'][tio.DATA].float().to(self.device)
             if len(target_label.shape) == 4:
                 target_label = target_label.unsqueeze(dim=0)
             if len(source_label.shape) == 4:
                 source_label = source_label.unsqueeze(dim=0)
-            warped_source_label = self.model.warp(source_label, forward_flow)
-            warped_target_label = self.model.warp(target_label, backward_flow)
-            loss_pair[1] = self.seg_loss(warped_source_label, target_label) + self.seg_loss(warped_target_label, source_label)
-
+            warped_source_label = self.model.warp(source_label.float(), forward_flow)
+            warped_target_label = self.model.warp(target_label.float(), backward_flow)
+            loss_pair[1] = nn.MSELoss()(warped_source_label[:,1:, ...], target_label[:,1:, ...]) + nn.MSELoss()(warped_target_label[:,1:, ...], source_label[:,1:, ...])
         if self.lambda_mag > 0:
-            loss_pair[2] = (F.mse_loss(torch.zeros(forward_flow.shape, device=self.device), forward_flow) + F.mse_loss(torch.zeros(backward_flow.shape, device=self.device), backward_flow))
+            loss_pair[2] = nn.MSELoss()(forward_flow, torch.zeros(forward_flow.shape, device=self.device)) + nn.MSELoss()(backward_flow, torch.zeros(backward_flow.shape, device=self.device))
 
         if self.lambda_grad > 0:
-            loss_pair[3] = self.model.regularizer(forward_flow, penalty='l2').to(self.device) + \
-                            self.model.regularizer(backward_flow, penalty='l2').to(self.device)
+            loss_pair[3] = self.model.regularizer(forward_flow, penalty='l2').to(self.device) + self.model.regularizer(backward_flow, penalty='l2').to(self.device)
         return loss_pair
 
     def on_train_epoch_end(self):
@@ -116,7 +117,7 @@ class RegistrationTrainingModule(pl.LightningModule):
             dice_scores.append(torch.mean(dice[1:]).cpu().numpy())
 
             self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
-            self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
+            self.log("Similitude", self.lambda_sim * loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
             self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
             self.log("Magnitude", self.lambda_mag * loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
             self.log("Gradient", self.lambda_grad * loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
@@ -185,13 +186,13 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Registration 3D Images')
     parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/full_dataset.csv')
-    parser.add_argument('--epochs', type=int, help='Number of epochs', default=15000)
+    parser.add_argument('--epochs', type=int, help='Number of epochs', default=1)
     parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=4)
-    parser.add_argument('--loss', type=str, help='Loss function', default='mse')
-    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=1)
-    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=1)
-    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.001)
-    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.005)
+    parser.add_argument('--loss', type=str, help='Loss function', default='lncc')
+    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=100)
+    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=200)
+    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.01)
+    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.5)
     parser.add_argument('--precision', type=int, help='Precision', default=32)
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)

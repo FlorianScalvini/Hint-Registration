@@ -4,6 +4,58 @@ import monai
 import numpy as np
 import torch.nn as nn
 import torch.functional as F
+
+
+class LNCC():
+    def __init__(self, sigma):
+        super().__init__()
+        self.sigma = sigma
+
+    def blur(self, tensor):
+        return gaussian_blur(tensor, self.sigma * 4 + 1, self.sigma)
+
+    def __call__(self, image_A, image_B):
+        I = image_A
+        J = image_B
+        assert I.shape == J.shape, "The shape of image I and J sould be the same."
+
+        return torch.mean(
+            1
+            - (self.blur(I * J) - (self.blur(I) * self.blur(J)))
+            / torch.sqrt(
+                (torch.relu(self.blur(I * I) - self.blur(I) ** 2) + 0.00001)
+                * (torch.relu(self.blur(J * J) - self.blur(J) ** 2) + 0.00001)
+            )
+        )
+
+def _get_gaussian_kernel1d(kernel_size, sigma):
+    ksize_half = (kernel_size - 1) * 0.5
+    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
+    pdf = torch.exp(-0.5 * (x / sigma).pow(2))
+    kernel1d = pdf / pdf.sum()
+    return kernel1d
+
+def gaussian_blur(tensor, kernel_size, sigma, padding="same"):
+    kernel1d = _get_gaussian_kernel1d(kernel_size=kernel_size, sigma=sigma).to(
+        tensor.device, dtype=tensor.dtype
+    )
+    out = tensor
+    group = tensor.shape[1]
+
+    if len(tensor.shape) - 2 == 1:
+        out = torch.conv1d(out, kernel1d[None, None, :].expand(group,-1,-1), padding="same", groups=group)
+    elif len(tensor.shape) - 2 == 2:
+        out = torch.conv2d(out, kernel1d[None, None, :, None].expand(group,-1,-1,-1), padding="same", groups=group)
+        out = torch.conv2d(out, kernel1d[None, None, None, :].expand(group,-1,-1,-1), padding="same", groups=group)
+    elif len(tensor.shape) - 2 == 3:
+        out = torch.conv3d(out, kernel1d[None, None, :, None, None].expand(group,-1,-1,-1,-1), padding="same", groups=group)
+        out = torch.conv3d(out, kernel1d[None, None, None, :, None].expand(group,-1,-1,-1,-1), padding="same", groups=group)
+        out = torch.conv3d(out, kernel1d[None, None, None, None, :].expand(group,-1,-1,-1,-1), padding="same", groups=group)
+
+    return out
+
+
+
 class NCC(nn.Module):
     """
     Local (over window) normalized cross correlation loss.
@@ -170,6 +222,7 @@ def GetLoss(loss):
     ValueError: If the given loss function name is unknown.
     '''
     # Check the value of the loss parameter and return the corresponding loss function
+
     if loss == 'mse':
         return nn.MSELoss()
     elif loss == 'mae':
@@ -177,7 +230,7 @@ def GetLoss(loss):
     elif loss == 'ncc':
         return NCC()
     elif loss == 'lncc':
-        return monai.losses.LocalNormalizedCrossCorrelationLoss()
+        return monai.losses.LocalNormalizedCrossCorrelationLoss(kernel_size=15, smooth_dr=1e-8, kernel_type='rectangular', reduction="mean")
     elif loss == 'dice':
         return monai.losses.DiceLoss()
     elif loss == 'dicece':

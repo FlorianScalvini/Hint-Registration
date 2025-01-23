@@ -19,7 +19,7 @@ class MLP(nn.Module):
             layers.append(activation_layer())
         layers.append(nn.Linear(hidden_size[-2], 1))
         self.model = nn.Sequential(*layers)
-        self._initialize_weights()
+
 
     def forward(self, x):
         return self.model(x)

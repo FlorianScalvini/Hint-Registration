@@ -5,10 +5,11 @@ import os
 import sys
 import random
 import argparse
+import matplotlib.pyplot as plt
+import monai.losses
 from torch import Tensor
 import pytorch_lightning as pl
 import torch.nn.functional as F
-
 sys.path.insert(0, "..")
 import torchio2 as tio
 from dataset import OneWrappedSubjectDataset, WrappedSubjectDataset
@@ -34,7 +35,7 @@ class LongDeformTrainPL(pl.LightningModule):
         self.num_inter_by_epoch = num_inter_by_epoch
         self.dice_metric = DiceMetric(include_background=True, reduction="none")
         self.dice_max = 0 # Maximum dice score
-        self.seg_loss = monai.losses.GeneralizedDiceLoss(include_background=False)
+        self.seg_loss = monai.losses.DiceCELoss(include_background=False)
 
     def on_train_epoch_start(self) -> None:
         self.model.train()
@@ -45,7 +46,7 @@ class LongDeformTrainPL(pl.LightningModule):
     def on_train_start(self) -> None:
         self.subject_t0 = None
         self.subject_t1 = None
-        for i in range(len(self.trainer.train_dataloader.dataset)):
+        for i in range(self.trainer.train_dataloader.dataset.num_subjects):
             subject = self.trainer.train_dataloader.dataset[i]
             if subject['age'] == 0:
                 self.subject_t0 = subject
@@ -63,23 +64,24 @@ class LongDeformTrainPL(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         return optimizer
 
-    def training_step(self, subject, batch_idx):
+    def training_step(self, _):
         velocity = self.model.forward((self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA]))
         forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, 1.0)
         loss_tensor = self.registration_loss(self.subject_t0, self.subject_t1, forward_flow, backward_flow)
-        index = random.sample(range(0, len(self.trainer.train_dataloader.dataset) - 2), self.num_inter_by_epoch)
+
+        index = random.sample(range(0, self.trainer.train_dataloader.dataset.num_subjects - 2), self.num_inter_by_epoch)
         for i in index:
             intermediate_subject = self.trainer.train_dataloader.dataset[i + 1]
-            forward_flow, backward_flow = self.model.getDeformationFieldFrom2Times(velocity, subject['age'][0], intermediate_subject['age'])
-            loss_tensor += self.registration_loss(subject, intermediate_subject, forward_flow, backward_flow)
+            forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, intermediate_subject['age'])
+            loss_tensor += self.registration_loss(self.subject_t0, intermediate_subject, forward_flow, backward_flow)
         loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
 
         if self.model.mode == "mlp":
-            loss_zero = self.sim_loss(self.model.mlp_model(torch.tensor([0.0]).to(self.device)), torch.tensor([0.0]).to(self.device))
+            loss_zero = nn.MSELoss()(self.model.mlp_model(torch.tensor([0.0]).to(self.device)), torch.tensor([0.0]).to(self.device))
             self.log("MLP t_0", loss_zero, prog_bar=True, on_epoch=True, sync_dist=True)
 
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Similitude", loss_tensor[0] * self.lambda_sim, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Magnitude", self.lambda_mag * loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Gradient", self.lambda_grad * loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
@@ -99,8 +101,8 @@ class LongDeformTrainPL(pl.LightningModule):
             source_image = source_image.unsqueeze(dim=0)
 
         if self.lambda_sim > 0:
-            loss_pair[0] = self.sim_loss(target_image, self.model.reg_model.warp(source_image, forward_flow)) + \
-                           self.sim_loss(source_image, self.model.reg_model.warp(target_image, backward_flow))
+            loss_pair[0] =  (self.sim_loss(self.model.reg_model.warp(source_image, forward_flow), target_image) +
+                             self.sim_loss(self.model.reg_model.warp(target_image, backward_flow), source_image))
 
         if self.lambda_seg > 0:
             target_label = target['label'][tio.DATA].float().to(self.device)
@@ -111,9 +113,9 @@ class LongDeformTrainPL(pl.LightningModule):
                 source_label = source_label.unsqueeze(dim=0)
             warped_source_label = self.model.reg_model.warp(source_label.float(), forward_flow)
             warped_target_label = self.model.reg_model.warp(target_label.float(), backward_flow)
-            loss_pair[1] = self.seg_loss(warped_source_label, target_label) + self.seg_loss(warped_target_label, source_label)
+            loss_pair[1] = nn.MSELoss()(warped_source_label[:,1:, ...], target_label[:,1:, ...]) + nn.MSELoss()(warped_target_label[:,1:, ...], source_label[:,1:, ...])
         if self.lambda_mag > 0:
-            loss_pair[2] = (self.sim_loss(torch.zeros(forward_flow.shape, device=self.device), forward_flow) + self.sim_loss(torch.zeros(backward_flow.shape, device=self.device), backward_flow))
+            loss_pair[2] = nn.MSELoss()(forward_flow, torch.zeros(forward_flow.shape, device=self.device)) + nn.MSELoss()(backward_flow, torch.zeros(backward_flow.shape, device=self.device))
 
         if self.lambda_grad > 0:
             loss_pair[3] = self.model.reg_model.regularizer(forward_flow, penalty='l2').to(self.device) + self.model.reg_model.regularizer(backward_flow, penalty='l2').to(self.device)
@@ -163,12 +165,23 @@ class LongDeformTrainPL(pl.LightningModule):
             mean_dices = torch.mean(overall_dice).item()
         if self.dice_max < mean_dices:
             self.dice_max = mean_dices
-            print("New best dice:", self.dice_max)
             torch.save(self.model.reg_model.state_dict(), self.save_path + "/model_reg_best.pth")
             if self.model.mode == 'mlp':
                 torch.save(self.model.mlp_model.state_dict(), self.save_path + "/model_mlp_best.pth")
-
-
+            self.log("Dice max", self.dice_max, prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Mean dice", mean_dices, prog_bar=True, on_epoch=True, sync_dist=True)
+        if self.model.mode == 'mlp':
+            x = np.arange(0, 1, 0.01)
+            y = []
+            x_label = []
+            for i in x:
+                temporal_weight = torch.abs(self.model.mlp_model(torch.asarray([i]).float().to(self.device)))
+                y.append(temporal_weight.detach().cpu().numpy())
+                x_label.append(i)
+            plt.figure(figsize=(10, 8))
+            plt.plot(x, y)
+            self.trainer.loggers[0].experiment.add_figure("Temporal MLP coefficient", plt.gcf(), global_step=0)
+            plt.close()
 
 
 def train_main(args):
@@ -180,14 +193,14 @@ def train_main(args):
 
     ## Config model
     # get the spatial dimension of the data (3D)
-    dataset = WrappedSubjectDataset(dataset_path=args.csv, transform=train_transforms, lambda_age=lambda x: (x -args.t0) / (args.t1 - args.t0))
-    loader = tio.SubjectsLoader(dataset, batch_size=1, num_workers=8, persistent_workers=False, pin_memory=True)
+    dataset = OneWrappedSubjectDataset(dataset_path=args.csv, transform=train_transforms, lambda_age=lambda x: (x -args.t0) / (args.t1 - args.t0))
+    loader = tio.SubjectsLoader(dataset, batch_size=args.batch_size, num_workers=8, persistent_workers=True, pin_memory=True)
     val_dataset = OneWrappedSubjectDataset(dataset_path=args.csv, transform=train_transforms, lambda_age=lambda x: (x -args.t0) / (args.t1 - args.t0))
-    val_loader = tio.SubjectsLoader(val_dataset, batch_size=1, num_workers=8, persistent_workers=False, pin_memory=True)
+    val_loader = tio.SubjectsLoader(val_dataset, batch_size=1, num_workers=8, persistent_workers=True, pin_memory=True)
     in_shape = dataset[0]['image'][tio.DATA].shape[1:]
     if args.mode != 'mlp':
         model = OurLongitudinalDeformation(
-            reg_model= RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32], strides=[2,2]), inshape=in_shape, int_steps=7),
+            reg_model= RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[4, 8, 16, 32], strides=[2,2,2]), inshape=in_shape, int_steps=7),
             mode='linear',
             hidden_mlp_layer=None,
             t0=args.t0,
@@ -233,9 +246,9 @@ def train_main(args):
     )
     trainer_reg = pl.Trainer(**trainer_args)
     trainer_reg.fit(training_module, loader, val_dataloaders=val_loader)
-    torch.save(training_module.reg_model.state_dict(), os.path.join(save_path, "final_reg.pth"))
+    torch.save(training_module.model.reg_model.state_dict(), os.path.join(save_path, "final_reg.pth"))
     if args.mode == 'mlp':
-        torch.save(training_module.temporal_mlp.state_dict(), os.path.join(save_path, "final_mlp.pth"))
+        torch.save(training_module.model.temporal_mlp.state_dict(), os.path.join(save_path, "final_mlp.pth"))
 
 
 
@@ -245,21 +258,22 @@ if __name__ == '__main__':
     parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/resized_dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
-    parser.add_argument('--epochs', type=int, help='Number of epochs', default=5000)
+    parser.add_argument('--epochs', type=int, help='Number of epochs', default=15000)
     parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=1)
-    parser.add_argument('--loss', type=str, help='Loss function', default='mse')
+    parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
+    parser.add_argument('--loss', type=str, help='Loss function', default='lncc')
     parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=1)
-    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=0.05)
-    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.0005)
-    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.01)
+    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=100)
+    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.001)
+    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.5)
     parser.add_argument('--precision', type=int, help='Precision', default=32)
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--inshape', type=int, help='Input shape', default=128)
-    parser.add_argument('--num_inter_by_epoch', type=int, help='Number of interpolations by epoch', default=8)
-    parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='linear')
+    parser.add_argument('--num_inter_by_epoch', type=int, help='Number of interpolations by epoch', default=6)
+    parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='mlp')
     parser.add_argument('--mlp_hidden_size', type=int, nargs='+', help='Hidden size of the MLP model', default=[1, 32, 32, 32, 1])
-    parser.add_argument('--load', type=str, help='Load registration model', default="/home/florian/Documents/Programs/Hint-Registration/Registration/Results/version_39/last_model.pth")
+    parser.add_argument('--load', type=str, help='Load registration model', default="")
     parser.add_argument('--load_mlp', type=str, help='Load MLP model', default='')
     args = parser.parse_args()
     torch.set_float32_matmul_precision('high')

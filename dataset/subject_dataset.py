@@ -68,6 +68,7 @@ class WrappedSubjectDataset(tio.SubjectsDataset):
             lambda_age = lambda x: x
         subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
         super().__init__(subjects, transform=transform)
+        self.num_subjects = len(subjects)
 
     def __len__(self) -> int:
         return tio.SubjectsDataset.__len__(self)
