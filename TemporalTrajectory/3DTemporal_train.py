@@ -6,27 +6,23 @@ import sys
 import random
 import argparse
 import monai.losses
+import torchio2 as tio
 from torch import Tensor
 import pytorch_lightning as pl
-import matplotlib.pyplot as plt
-import torch.nn.functional as F
-from monai.metrics import DiceMetric
-from pytorch_lightning.callbacks import ModelCheckpoint
-
 sys.path.insert(0, "..")
-import torchio2 as tio
-from utils.loss import *
-from Registration import RegistrationModuleSVF
-from dataset import OneWrappedSubjectDataset, WrappedSubjectDataset
-from utils import create_directory, write_namespace_arguments
-from LongitudinalDeformation import OurLongitudinalDeformation
 
 from utils.loss import *
+from monai.metrics import DiceMetric
+from dataset import OneWrappedSubjectDataset
 from Registration import RegistrationModuleSVF
+from utils import create_directory, write_namespace_arguments
+from LongitudinalDeformation import OurLongitudinalDeformationINR
+
+
 
 
 class LongDeformTrainPL(pl.LightningModule):
-    def __init__(self, model: OurLongitudinalDeformation, loss: str = 'mse', lambda_sim: float = 1.0,
+    def __init__(self, model: OurLongitudinalDeformationINR, loss: str = 'mse', lambda_sim: float = 1.0,
                  lambda_seg: float = 0, lambda_mag: float = 0, lambda_grad: float = 0, save_path: str = "./", num_classes: int = 3, num_inter_by_epoch=1):
         super().__init__()
         self.model = model
@@ -71,20 +67,15 @@ class LongDeformTrainPL(pl.LightningModule):
 
     def training_step(self, _):
         velocity = self.model.forward((self.subject_t0['image'][tio.DATA], self.subject_t1['image'][tio.DATA]))
-        forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, 1.0)
+        forward_flow, backward_flow = self.model.reg_model.velocity_to_flow(velocity)
         loss_tensor = self.registration_loss(self.subject_t0, self.subject_t1, forward_flow, backward_flow)
-
-        index = random.sample(range(0, self.trainer.train_dataloader.dataset.num_subjects - 2), self.num_inter_by_epoch)
+        index = random.sample(range(0, self.trainer.train_dataloader.dataset.num_subjects), self.num_inter_by_epoch)
         for i in index:
-            intermediate_subject = self.trainer.train_dataloader.dataset[i + 1]
+            intermediate_subject = self.trainer.train_dataloader.dataset[i]
             forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, intermediate_subject['age'])
             loss_tensor += self.registration_loss(self.subject_t0, intermediate_subject, forward_flow, backward_flow)
+
         loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
-
-        if self.model.mode == "mlp":
-            loss_zero = nn.MSELoss()(self.model.mlp_model(torch.tensor([0.0]).to(self.device)), torch.tensor([0.0]).to(self.device))
-            self.log("MLP t_0", loss_zero, prog_bar=True, on_epoch=True, sync_dist=True)
-
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Similitude", loss_tensor[0] * self.lambda_sim, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
@@ -128,8 +119,7 @@ class LongDeformTrainPL(pl.LightningModule):
 
     def on_train_epoch_end(self):
         torch.save(self.model.reg_model.state_dict(), self.save_path + "/last_model_reg.pth")
-        if self.model.mode == 'mlp':
-            torch.save(self.model.mlp_model.state_dict(), self.save_path + "/last_model_mlp.pth")
+        torch.save(self.model.temporal_model.state_dict(), self.save_path + "/last_model_mlp.pth")
 
 
     def validation_step(self, batch, batch_idx):
@@ -163,7 +153,7 @@ class LongDeformTrainPL(pl.LightningModule):
                 forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, subject['age'])
                 warped_source_label = self.model.reg_model.warp(subject_t0['label'][tio.DATA].to(self.device).float(),
                                                       forward_flow)
-                self.dice_metric(torch.argmax(warped_source_label, dim=1).int(),
+                self.dice_metric(torch.round(warped_source_label).int(),
                                  subject['label'][tio.DATA].to(self.device).int().unsqueeze(0))
             overall_dice = self.dice_metric.aggregate()
             self.dice_metric.reset()
@@ -171,8 +161,7 @@ class LongDeformTrainPL(pl.LightningModule):
         if self.dice_max < mean_dices:
             self.dice_max = mean_dices
             torch.save(self.model.reg_model.state_dict(), self.save_path + "/model_reg_best.pth")
-            if self.model.mode == 'mlp':
-                torch.save(self.model.mlp_model.state_dict(), self.save_path + "/model_mlp_best.pth")
+            torch.save(self.model.temporal_model.state_dict(), self.save_path + "/model_mlp_best.pth")
             self.log("Dice max", self.dice_max, prog_bar=True, on_epoch=True, sync_dist=True)
         self.log("Mean dice", mean_dices, prog_bar=True, on_epoch=True, sync_dist=True)
 
@@ -191,44 +180,29 @@ def train_main(args):
     val_dataset = OneWrappedSubjectDataset(dataset_path=args.csv, transform=train_transforms, lambda_age=lambda x: (x -args.t0) / (args.t1 - args.t0))
     val_loader = tio.SubjectsLoader(val_dataset, batch_size=1, num_workers=8, persistent_workers=True, pin_memory=True)
     in_shape = dataset[0]['image'][tio.DATA].shape[1:]
-    if args.mode != 'mlp':
-        model = OurLongitudinalDeformation(
-            reg_model= RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32, 64], strides=[2,2,2]), inshape=in_shape, int_steps=7),
-            mode='linear',
-            hidden_dim=None,
-            num_layers=0,
-            t0=args.t0,
-            t1=args.t1
-        )
-        if args.load != '':
-            model.loads(args.load)
-    else:
-        model = OurLongitudinalDeformation(
-            reg_model= RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32, 64], strides=[2,2,2]), inshape=in_shape, int_steps=7),
-            mode='mlp',
-            hidden_dim=args.mlp_hidden_dim,
-            num_layers=args.mlp_num_layers,
-            t0=args.t0,
-            t1=args.t1
-        )
-        if args.load != '' and args.load_mlp != '':
-            model.load(args.load, args.load_mlp)
+
+    model = OurLongitudinalDeformationINR(
+        reg_model= RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32, 64], strides=[2,2,2]), inshape=in_shape, int_steps=7),
+        hidden_dim=args.mlp_hidden_dim,
+        num_layers=args.mlp_num_layers,
+        size=in_shape,
+        t0=args.t0,
+        t1=args.t1,
+    )
+    if args.load != '' and args.load_mlp != '':
+        model.load(args.load, args.load_mlp)
 
     ## Config training
     trainer_args = {
         'max_epochs': args.epochs,
         'precision': args.precision,
         'accumulate_grad_batches': args.accumulate_grad_batches,
-        'logger': pl.loggers.TensorBoardLogger(save_dir= "./" + args.mode + "/log", name=None),
+        'logger': pl.loggers.TensorBoardLogger(save_dir= "./3d_mlp/log", name=None),
         'check_val_every_n_epoch': 10,
         'log_every_n_steps': 1,
         'num_sanity_val_steps': 0,
         'enable_progress_bar': True if args.progress_bar is True else False,
     }
-    checkpoint_callback = ModelCheckpoint(
-        every_n_train_steps=1000,  # Save every 1000 steps
-    )
-    trainer_args['callbacks'] = [checkpoint_callback]
 
     save_path = trainer_args['logger'].log_dir.replace("log", "/Results")
     create_directory(save_path)
@@ -248,13 +222,13 @@ def train_main(args):
     trainer_reg = pl.Trainer(**trainer_args)
     trainer_reg.fit(training_module, loader, val_dataloaders=val_loader)
     torch.save(training_module.model.reg_model.state_dict(), os.path.join(save_path, "final_reg.pth"))
-    if args.mode == 'mlp':
-        torch.save(training_module.model.temporal_mlp.state_dict(), os.path.join(save_path, "final_mlp.pth"))
+    torch.save(training_module.model.temporal_mlp.state_dict(), os.path.join(save_path, "final_mlp.pth"))
+
 
 
 # %% Main program
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images with MLP model')
+    parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images with 3D Temporal model')
     parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/resized_dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
@@ -271,10 +245,9 @@ if __name__ == '__main__':
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--inshape', type=int, help='Input shape', default=128)
-    parser.add_argument('--num_inter_by_epoch', type=int, help='Number of interpolations by epoch', default=6)
-    parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='mlp')
-    parser.add_argument('--mlp_num_layers', type=int, help='Number of layer of the mlp', default=4)
-    parser.add_argument('--mlp_hidden_dim', type=int, help='Number of layer of the mlp', default=32)
+    parser.add_argument('--num_inter_by_epoch', type=int, help='Number of interpolations by epoch', default=4)
+    parser.add_argument('--mlp_num_layers', type=int, nargs='+', help='Number of layer of the mlp', default=4)
+    parser.add_argument('--mlp_hidden_dim', type=int, nargs='+', help='Number of layer of the mlp', default=32)
     parser.add_argument('--load', type=str, help='Load registration model', default="")
     parser.add_argument('--load_mlp', type=str, help='Load MLP model', default='')
     args = parser.parse_args()

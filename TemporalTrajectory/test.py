@@ -53,10 +53,11 @@ def test(args):
     # Load models
     model = OurLongitudinalDeformation(
         reg_model=RegistrationModuleSVF(
-            model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32],
-                                                    strides=[2, 2]), inshape=in_shape, int_steps=7),
+            model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[4, 8, 16, 32],
+                                                    strides=[2, 2, 2]), inshape=(128,128,128), int_steps=7),
         mode=args.mode,
-        hidden_mlp_layer=args.mlp_hidden_size,
+        hidden_dim=args.mlp_hidden_dim,
+        num_layers=args.mlp_num_layers,
         t0=args.t0,
         t1=args.t1
     )
@@ -74,11 +75,11 @@ def test(args):
             target_subject = transforms(target_subject)
             source_image = torch.unsqueeze(source_subject["image"][tio.DATA], 0).to(device)
             source_label = torch.unsqueeze(source_subject["label"][tio.DATA], 0).to(device)
-            _ = model.forward((source_image, torch.unsqueeze(target_subject["image"][tio.DATA], 0).to(device).float()))
+            velocity = model.forward((source_image, torch.unsqueeze(target_subject["image"][tio.DATA], 0).to(device).float()))
             for target_subject in subjects_dataset:
                 age = int(target_subject['age'] * (args.t1 - args.t0) + args.t0)
                 transformed_target_subject = transforms(target_subject)
-                forward_flow, backward_flow = model.getDeformationFieldFromTime(transformed_target_subject['age'])
+                forward_flow, backward_flow = model.getDeformationFieldFromTime(velocity, transformed_target_subject['age'])
                 warped_source_label = model.reg_model.warp(source_label.float(), forward_flow)
                 warped_source_image = model.reg_model.warp(source_image.float(), forward_flow)
                 warped_subject = tio.Subject(
@@ -86,6 +87,20 @@ def test(args):
                     label=tio.LabelMap(tensor=torch.argmax(torch.round(warped_source_label), dim=1).int().detach().cpu(), affine=source_subject['label'].affine)
                 )
                 warped_subject = reverse_transform(warped_subject)
+
+                dice = dice_metric(warped_subject['label'][tio.DATA].unsqueeze(0).to(device), target_subject["label"][tio.DATA].unsqueeze(0).float().to(device))
+                writer.writerow({
+                    "time": age,
+                    "mDice": torch.mean(dice[0][1:]).item(),
+                    "Cortex": torch.mean(dice[0][3:5]).item(),
+                    "Ventricule": torch.mean(dice[0][7:9]).item(),
+                    "all": dice[0].cpu().numpy()
+                })
+                print(age, torch.mean(dice[0][1:]).item())
+                loggers.experiment.add_scalar("Dice ventricule", torch.mean(dice[0][7:9]).item(), age)
+                loggers.experiment.add_scalar("Dice cortex", torch.mean(dice[0][3:5]).item(), age)
+                loggers.experiment.add_scalar("mDice", torch.mean(dice[0]).item(), age)
+
                 if args.save_image:
                     warped_subject['image'].save(save_path + "/" + str(age) + "_fused_source_image.nii.gz")
                     warped_subject['label'].save(save_path + "/" + str(age) + "_fused_source_label.nii.gz")
@@ -101,39 +116,25 @@ def test(args):
                     loggers.experiment.add_image("Atlas Axial Plane",
                                                  TF.rotate(colored_error_seg[:, :, :, int(in_shape[2] / 2)], 90), age)
 
-                dice = dice_metric(torch.round(warped_source_label).to(device), target_subject["label"][tio.DATA].unsqueeze(0).float().to(device))
-                writer.writerow({
-                    "time": age,
-                    "mDice": torch.mean(dice[0][1:]).item(),
-                    "Cortex": torch.mean(dice[0][3:5]).item(),
-                    "Ventricule": torch.mean(dice[0][7:9]).item(),
-                    "all": dice[0].cpu().numpy()
-                })
-                loggers.experiment.add_scalar("Dice ventricule", torch.mean(dice[0][7:9]).item(), age)
-                loggers.experiment.add_scalar("Dice cortex", torch.mean(dice[0][3:5]).item(), age)
-                loggers.experiment.add_scalar("mDice", torch.mean(dice[0]).item(), age)
-
-
-
-
 
 
 # %% Main program
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description='Beo Registration 3D Longitudinal Images with MLP model')
-    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../../../data/full_dataset.csv')
+    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/full_dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
-    parser.add_argument('--load', type=str, help='Path to the model', default='')
-    parser.add_argument('--load_mlp', type=str, help='Path to the mlp model', default='')
+    parser.add_argument('--load', type=str, help='Path to the model', default='/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/linear/Results/version_0/model_reg_best.pth')
+    parser.add_argument('--load_mlp', type=str, help='Path to the mlp model', default='/home/florian/Documents/Programs/Hint-Registration/TemporalTrajectory/mlp/Results/version_26/model_mlp_best.pth')
     parser.add_argument('--save', type=str, help='Name of the model', default='final')
     parser.add_argument('--inshape', type=int, help='Size of the input image', default=128)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--error_map', type=bool, help='Compute the error map', default=False)
-    parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='mlp')
+    parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='linear')
     parser.add_argument('--save_image', type=bool, help='Save MRI', default=False)
-    parser.add_argument('--mlp_hidden_size', type=int, nargs='+', help='Hidden size of the MLP model', default=[1, 32, 32, 32, 1])
+    parser.add_argument('--mlp_hidden_dim', type=int, help='Hidden size of the MLP model', default=32),
+    parser.add_argument('--mlp_num_layers', type=int, help='Number layer of the MLP', default=4),
     args = parser.parse_args()
     test(args=args)
 

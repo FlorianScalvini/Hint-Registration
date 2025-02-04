@@ -237,5 +237,9 @@ def GetLoss(loss):
         return monai.losses.DiceCELoss()
     elif loss == 'mi':
         return monai.losses.GlobalMutualInformationLoss(num_bins=32)
+    elif loss == 'be':
+        return monai.losses.BendingEnergyLoss()
+    elif loss == 'diff':
+        return monai.losses.DiffusionLoss()
     else:
         raise ValueError(f"Unknown loss function: {loss}")

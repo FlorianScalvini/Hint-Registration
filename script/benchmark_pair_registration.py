@@ -43,17 +43,16 @@ def _compute_registration_dice_between_source_and_targets(model: RegistrationMod
     for subject in targets:
         transformed_subject = transform(subject)
         _, _, warped_source_label, _ = inference(source_subject_transformed, transformed_subject, model, device)
-
-        warped_source_label = reverse_transform(warped_source_label.squeeze(0).cpu()).unsqueeze(0).to(device)
+        warped_source_label = tio.LabelMap(tensor=torch.argmax(torch.round(warped_source_label), dim=1).int().detach().cpu(), affine=transformed_subject['label'].affine)
+        warped_source_label = reverse_transform(warped_source_label)[tio.DATA].float().cpu().unsqueeze(0).to(device)
         target_label = subject["label"][tio.DATA].float().to(device).unsqueeze(0)
-
-        dice = dice_metric(warped_source_label, target_label)[0]
+        dice = dice_metric(torch.round(warped_source_label), target_label)[0]
         dice_metric.reset()
         dice_scores.append(dice.cpu().numpy())
     return np.vstack(dice_scores)
 
 def _compute_voxelmorph_like(dataset_path, source_image_path, source_label_path, model_path, inshape, orig_shape, num_classes, device):
-    model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32), strides=(2, 2)), inshape=(inshape, inshape, inshape), int_steps=7).eval().to(device)
+    model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(4, 8, 16, 32), strides=(2,2, 2)), inshape=(inshape, inshape, inshape), int_steps=7).eval().to(device)
     model.load_state_dict(torch.load(model_path))
     return _compute_registration_dice_between_source_and_targets(model, dataset_path, source_image_path, source_label_path, inshape,  (221, 221, 221), num_classes, upsample=orig_shape, device=device)
 
@@ -115,7 +114,6 @@ def main(arguments):
         plt.plot(x[1:],  np.mean(scores[label][1:, 3:5], axis=1).tolist(), color=color[i], marker=marker[i], label=label)
         plt.legend()
     plt.show()
-
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')

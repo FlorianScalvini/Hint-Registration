@@ -46,7 +46,7 @@ def test(args):
     in_shape = subjects_dataset_transformed[0]['image'][tio.DATA].shape[1:]
 
     # Load models
-    reg_model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[8, 16, 32], strides=[2,2]), inshape=in_shape, int_steps=7)
+    reg_model = RegistrationModuleSVF(model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[4, 8, 16, 32], strides=[2,2,2]), inshape=in_shape, int_steps=7)
     reg_model.load_state_dict(torch.load(args.load))
     reg_model.eval().to(device)
 
@@ -112,9 +112,8 @@ def test(args):
                                              TF.rotate(colored_error_seg[:, :, int(in_shape[1] / 2), :], 90), age)
                 loggers.experiment.add_image("Atlas Axial Plane",
                                              TF.rotate(colored_error_seg[:, :, :, int(in_shape[2] / 2)], 90), age)
+            dice = dice_metric(warped_subject['label'][tio.DATA].unsqueeze(0).to(device), subjects_dataset[i]["label"][tio.DATA].unsqueeze(0).float().to(device))
 
-            dice = dice_metric(torch.round(warped_source_label).to(device),
-                               target_subject["label"][tio.DATA].unsqueeze(0).float().to(device))
             writer.writerow({
                 "time": age,
                 "mDice": torch.mean(dice[0][1:]).item(),
@@ -134,8 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--csv', type=str, help='Path to the csv file', default='../../data/full_dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
-    parser.add_argument('--load', type=str, help='Path to the model', default='')
-    parser.add_argument('--save', type=str, help='Name of the model', default='final')
+    parser.add_argument('--load', type=str, help='Path to the model', default='/home/florian/Documents/Dataset/JeanZay/Registration/Results/version_0/last_model.pth')
     parser.add_argument('--inshape', type=int, help='Size of the input image', default=128)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--error_map', type=bool, help='Compute the error map', default=False)

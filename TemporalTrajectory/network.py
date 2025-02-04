@@ -6,19 +6,22 @@ class MLP(nn.Module):
     '''
         Multi-layer perceptron
     '''
-    def __init__(self, hidden_size : list[int], activation_layer=nn.ReLU):
+    def __init__(self, input_dim: int = 1, output_dim: int = 1, hidden_dim: int = 32, num_layers: int = 4):
         '''
-        :param hidden_size: list of int containing the size of each hidden layer
-        :param activation_layer: activation function at each hidden layer
-        :param output_activation: activation function at the output layer
+        :param input_dim: int
+        :param output_dim: int
+        :param hidden_dim: int
+        :param num_layers: int
         '''
         super(MLP, self).__init__()
         layers = []
-        for i in range(len(hidden_size) - 2):
-            layers.append(nn.Linear(hidden_size[i], hidden_size[i + 1]))
-            layers.append(activation_layer())
-        layers.append(nn.Linear(hidden_size[-2], 1))
+        layers.append(nn.Linear(input_dim, hidden_dim))  # First layer : Coord + time
+        for _ in range(num_layers - 2):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(hidden_dim, output_dim))
         self.model = nn.Sequential(*layers)
+        self._initialize_weights()
 
 
     def forward(self, x):

@@ -28,9 +28,8 @@ def main(arguments):
     ## Config Subject
 
     transforms = tio.Compose([
+        tio.transforms.CropOrPad(target_shape=(192, 224, 192)),
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
-        tio.transforms.CropOrPad(target_shape=221),
-        tio.Resize(arguments.inshape),
         tio.OneHot(arguments.num_classes)
     ])
 
@@ -55,8 +54,8 @@ def main(arguments):
     target_subject = transforms(target_subject)
 
     model = RegistrationModuleSVF(
-        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                strides=(2, 2)), inshape=source_subject["image"][tio.DATA].shape[1:], int_steps=7).eval().to(device)
+        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=[4, 8, 16, 32],
+                                                strides=[2, 2, 2]), inshape=source_subject["image"][tio.DATA].shape[1:], int_steps=7).eval().to(device)
     model.load_state_dict(torch.load(arguments.load))
 
     warped_source_img, warped_target_img, warped_source_label, warped_target_label = inference(source_subject, target_subject, model, device)
@@ -66,8 +65,8 @@ def main(arguments):
     tio.LabelMap(tensor=torch.argmax(warped_source_label, dim=1).int().detach().cpu().numpy(), affine=source_subject['label'].affine).save('./source_label_warped.nii.gz')
     tio.LabelMap(tensor=torch.argmax(warped_target_label, dim=1).int().detach().cpu().numpy(), affine=target_subject['label'].affine).save('./target_label_warped.nii.gz')
 
-    dice_score = DiceMetric(include_background=True, reduction="none")
-    dice = dice_score(torch.round(warped_source_label).cpu(), target_subject["label"][tio.DATA].unsqueeze(0).cpu())[0]
+    dice_score = DiceMetric(include_background=True, reduction="none", num_classes=20)
+    dice = dice_score(torch.argmax(warped_source_label, dim=1).int().unsqueeze(0).cpu(), target_subject["label"][tio.DATA].int().unsqueeze(0).cpu())[0]
 
     print(f"Mean Dice: {torch.mean(dice[1:]).item()}")
     print(f"Mean Ventricule Dice: {torch.mean(dice[7:9]).item()}")
@@ -80,11 +79,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inference Registration 3D Images')
     parser.add_argument('--config', type=str, help='Path to the config file', default='./config_inference.json')
     parser.add_argument('--image_source', type=str, help='Path to the source image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t21.00.nii.gz")
-    parser.add_argument('--image_target', type=str, help='Path to the target image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t36.00.nii.gz")
+    parser.add_argument('--image_target', type=str, help='Path to the target image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t32.00.nii.gz")
     parser.add_argument('--label_source', type=str, help='Path to the source label', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz")
-    parser.add_argument('--target_label', type=str, help='Path to the target label', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t36.00_dhcp-19.nii.gz")
-    parser.add_argument("--load", type=str, help='Path to the model weights', required=False, default= "./Results/version_39/last_model.pth")
-    parser.add_argument("--save_path", type=str, help='Path to save the results', required=False, default="./Results/")
+    parser.add_argument('--target_label', type=str, help='Path to the target label', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t32.00_dhcp-19.nii.gz")
+    parser.add_argument("--load", type=str, help='Path to the model weights', required=False, default= "/home/florian/Documents/Dataset/JeanZay/Registration/Results/version_0/last_model.pth")
     parser.add_argument("--logger", type=str, help='Logger', required=False, default="log")
     parser.add_argument("--num_classes", type=int, help='Number of classes', required=False, default=20)
     parser.add_argument("--inshape", type=int, help='Input shape', required=False, default=128)
