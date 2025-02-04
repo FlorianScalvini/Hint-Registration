@@ -115,7 +115,10 @@ class RegistrationTrainingModule(pl.LightningModule):
             self.dice_metric(torch.round(warped_source_label), target['label'][tio.DATA].float().to(self.device))
             loss_tensor = self.registration_loss(source, target, forward_flow, backward_flow)
             loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
-            dice = self.dice_metric(torch.argmax(warped_source_label), target['label'][tio.DATA].float().to(self.device))[0]
+            dice = self.dice_metric(torch.nn.functional.one_hot(torch.argmax(warped_source_label, dim=1),
+                                                                num_classes=warped_source_label.size(1)).permute(0,4,1,2,3),
+                                    target['label'][tio.DATA].to(self.device).int().unsqueeze(0))[0]
+
             dice_scores.append(torch.mean(dice[1:]).cpu().numpy())
             self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
             self.log("Similitude", self.lambda_sim * loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)

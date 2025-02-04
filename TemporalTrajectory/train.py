@@ -164,7 +164,7 @@ class LongDeformTrainPL(pl.LightningModule):
                 forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, subject['age'])
                 warped_source_label = self.model.reg_model.warp(subject_t0['label'][tio.DATA].to(self.device).float(),
                                                       forward_flow)
-                self.dice_metric(torch.argmax(warped_source_label, dim=1).int(),
+                self.dice_metric(torch.nn.functional.one_hot(torch.argmax(warped_source_label, dim=1), num_classes=warped_source_label.size(1)).permute(0,4,1,2,3),
                                  subject['label'][tio.DATA].to(self.device).int().unsqueeze(0))
             overall_dice = self.dice_metric.aggregate()
             self.dice_metric.reset()
