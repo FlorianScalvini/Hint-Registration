@@ -133,6 +133,7 @@ class RegistrationTrainingModule(pl.LightningModule):
 def train(args):
     ## Config Dataset / Dataloader
     train_transforms = tio.Compose([
+        tio.CropOrPad(target_shape=args.inshape),
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
         tio.OneHot(args.num_classes)
     ])
@@ -206,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--progress_bar', type=bool, help='Precision', default=True)
     parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.01)
     parser.add_argument('--precision', type=int, help='Precision', default=32)
+    parser.add_argument('--inshape', type=int, nargs='+', help='Input shape', default=[128, 128, 128])
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--inshape', type=int, help='Input shape', default=128)

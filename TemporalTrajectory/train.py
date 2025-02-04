@@ -180,6 +180,7 @@ class LongDeformTrainPL(pl.LightningModule):
 def train_main(args):
     ## Config Dataset / Dataloader
     train_transforms = tio.Compose([
+        tio.CropOrPad(target_shape=args.inshape),
         tio.transforms.RescaleIntensity(out_min_max=(0, 1)),
         tio.OneHot(args.num_classes)
     ])
@@ -270,7 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('--progress_bar', type=bool, help='Precision', default=True)
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
-    parser.add_argument('--inshape', type=int, help='Input shape', default=128)
+    parser.add_argument('--inshape', type=int, nargs='+', help='Input shape', default=[128, 128, 128])
     parser.add_argument('--num_inter_by_epoch', type=int, help='Number of interpolations by epoch', default=6)
     parser.add_argument('--mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='mlp')
     parser.add_argument('--mlp_num_layers', type=int, help='Number of layer of the mlp', default=4)
