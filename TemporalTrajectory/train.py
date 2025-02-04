@@ -13,7 +13,8 @@ import torch.nn.functional as F
 from monai.metrics import DiceMetric
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-sys.path.insert(0, "..")
+sys.path.insert(0, ".")
+sys.path.insert(1, "..")
 import torchio2 as tio
 from utils.loss import *
 from Registration import RegistrationModuleSVF

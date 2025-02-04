@@ -4,7 +4,6 @@ import torch
 import monai
 import argparse
 import numpy as np
-import torchio2 as tio
 import torch.nn as nn
 from torch import Tensor
 import pytorch_lightning as pl
@@ -14,6 +13,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 sys.path.insert(0, ".")
 sys.path.insert(1, "..")
+
+import torchio2 as tio
 from utils.loss import GetLoss
 from dataset import PairwiseSubjectsDataset
 from registration_module import RegistrationModuleSVF, RegistrationModule

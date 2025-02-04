@@ -6,11 +6,13 @@ import sys
 import random
 import argparse
 import monai.losses
-import torchio2 as tio
 from torch import Tensor
 import pytorch_lightning as pl
-sys.path.insert(0, "..")
 
+sys.path.insert(0, ".")
+sys.path.insert(1, "..")
+
+import torchio2 as tio
 from utils.loss import *
 from monai.metrics import DiceMetric
 from dataset import OneWrappedSubjectDataset
