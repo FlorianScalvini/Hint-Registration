@@ -16,6 +16,7 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         layers = []
         layers.append(nn.Linear(input_dim, hidden_dim))  # First layer : Coord + time
+        layers.append(nn.ReLU())
         for _ in range(num_layers - 2):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())

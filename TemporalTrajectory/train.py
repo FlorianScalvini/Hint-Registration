@@ -79,18 +79,21 @@ class LongDeformTrainPL(pl.LightningModule):
         for i in index:
             intermediate_subject = self.trainer.train_dataloader.dataset[i + 1]
             forward_flow, backward_flow = self.model.getDeformationFieldFromTime(velocity, intermediate_subject['age'])
-            loss_tensor += self.registration_loss(self.subject_t0, intermediate_subject, forward_flow, backward_flow)
-        loss = (self.lambda_sim * loss_tensor[0] + self.lambda_seg * loss_tensor[1] + self.lambda_mag * loss_tensor[2] + self.lambda_grad * loss_tensor[3]).float()
-
+            loss_tensor += intermediate_subject['age'] * self.registration_loss(self.subject_t0, intermediate_subject, forward_flow, backward_flow)
+        loss_tensor[0] *= self.lambda_sim
+        loss_tensor[1] *= self.lambda_seg
+        loss_tensor[2] *= self.lambda_mag
+        loss_tensor[3] *= self.lambda_grad
+        loss = loss_tensor.sum()
         if self.model.mode == "mlp":
             loss_zero = nn.MSELoss()(self.model.mlp_model(torch.tensor([0.0]).to(self.device)), torch.tensor([0.0]).to(self.device))
+            loss += loss_zero
             self.log("MLP t_0", loss_zero, prog_bar=True, on_epoch=True, sync_dist=True)
-
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Similitude", loss_tensor[0] * self.lambda_sim, prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Segmentation", self.lambda_seg * loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Magnitude", self.lambda_mag * loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
-        self.log("Gradient", self.lambda_grad * loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Similitude", loss_tensor[0], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Segmentation",loss_tensor[1], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Magnitude", loss_tensor[2], prog_bar=True, on_epoch=True, sync_dist=True)
+        self.log("Gradient", loss_tensor[3], prog_bar=True, on_epoch=True, sync_dist=True)
         return loss
 
     def registration_loss(self, source: tio.Subject, target: tio.Subject, forward_flow: Tensor, backward_flow: Tensor) -> Tensor:
@@ -228,7 +231,7 @@ def train_main(args):
         'enable_progress_bar': True if args.progress_bar is True else False,
     }
     checkpoint_callback = ModelCheckpoint(
-        every_n_train_steps=1000,  # Save every 1000 steps
+        every_n_train_steps=100,  # Save every 1000 steps
     )
     trainer_args['callbacks'] = [checkpoint_callback]
 
@@ -248,6 +251,8 @@ def train_main(args):
         num_inter_by_epoch=args.num_inter_by_epoch
     )
     trainer_reg = pl.Trainer(**trainer_args)
+    if args.checkpoint != "":
+        training_module.on_load_checkpoint(args.checkpoint)
     trainer_reg.fit(training_module, loader, val_dataloaders=val_loader)
     torch.save(training_module.model.reg_model.state_dict(), os.path.join(save_path, "final_reg.pth"))
     if args.mode == 'mlp':
@@ -264,9 +269,9 @@ if __name__ == '__main__':
     parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=1)
     parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
     parser.add_argument('--loss', type=str, help='Loss function', default='lncc')
-    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=1)
+    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=2)
     parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=100)
-    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.01)
+    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.02)
     parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.5)
     parser.add_argument('--precision', type=int, help='Precision', default=32)
     parser.add_argument('--progress_bar', type=bool, help='Precision', default=True)
@@ -279,6 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('--mlp_hidden_dim', type=int, help='Number of layer of the mlp', default=32)
     parser.add_argument('--load', type=str, help='Load registration model', default="")
     parser.add_argument('--load_mlp', type=str, help='Load MLP model', default='')
+    parser.add_argument("--checkpoint", type=str, help='Path to the checkpoint', default="")
     args = parser.parse_args()
     torch.set_float32_matmul_precision('high')
     train_main(args=args)

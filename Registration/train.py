@@ -161,7 +161,7 @@ def train(args):
         'max_steps': args.max_steps,
         'precision': args.precision,
         'accumulate_grad_batches': args.accumulate_grad_batches,
-        'logger': pl.loggers.TensorBoardLogger(save_dir= "./log", name=None),
+        'logger': pl.loggers.TensorBoardLogger(save_dir= "./regis/log", name=None),
         'check_val_every_n_epoch': 20,
         'num_sanity_val_steps': 0,
         'enable_progress_bar': True if args.progress_bar is True else False,
@@ -176,7 +176,7 @@ def train(args):
     save_path = trainer_args['logger'].log_dir.replace("log", "Results")
 
     checkpoint_callback = ModelCheckpoint(
-        every_n_train_steps=1000,  # Save every 1000 steps
+        every_n_train_steps=100,  # Save every 1000 steps
     )
     trainer_args['callbacks'] = [checkpoint_callback]
     create_directory(save_path)
@@ -191,33 +191,33 @@ def train(args):
         lambda_grad=args.lam_g,
         save_path=save_path
     )
-
+    if args.checkpoint != "":
+        training_module.load_from_checkpoint(args.checkpoint)
     trainer = pl.Trainer(**trainer_args)
     trainer.fit(training_module, train_dataloaders=loader, val_dataloaders=loader)
-    torch.save(training_module.model.state_dict(), os.path.join(save_path + "/final_model_reg.pth"))
+    torch.save(training_module.model.state_dict(), os.path.join(save_path, "final_model_reg.pth"))
 
 
 # %% Main program
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Registration 3D Images')
-    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/full_dataset.csv')
-    parser.add_argument('--epochs', type=int, help='Number of epochs', default=None)
-    parser.add_argument('--max_steps', type=int, help='Number of steps', default=1)
+    parser.add_argument('--csv', type=str, help='Path to the csv file', default='../data/dHCP/resized_dataset.csv')
+    parser.add_argument('--max_steps', type=int, help='Number of steps', default=25000)
     parser.add_argument('--accumulate_grad_batches', type=int, help='Number of batches to accumulate', default=4)
-    parser.add_argument('--loss', type=str, help='Loss function', default='mse')
-    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=100)
-    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=200)
-    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.01)
-    parser.add_argument('--progress_bar', type=bool, help='Precision', default=True)
-    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.01)
+    parser.add_argument('--loss', type=str, help='Loss function', default='lncc')
+    parser.add_argument('--lam_l', type=float, help='Lambda similarity weight', default=2)
+    parser.add_argument('--lam_s', type=float, help='Lambda segmentation weight', default=100)
+    parser.add_argument('--lam_m', type=float, help='Lambda magnitude weight', default=0.02)
+    parser.add_argument('--progress_bar', type=bool, help='Display progress bar', default=True)
+    parser.add_argument('--lam_g', type=float, help='Lambda gradient weight', default=0.5)
     parser.add_argument('--precision', type=int, help='Precision', default=32)
     parser.add_argument('--inshape', type=int, nargs='+', help='Input shape', default=[128, 128, 128])
     parser.add_argument('--tensor-cores', type=bool, help='Use tensor cores', default=False)
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
-    parser.add_argument('--inshape', type=int, help='Input shape', default=128)
     parser.add_argument('--load', type=str, help='Load registration model', default='')
     parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
     parser.add_argument('--multi_gpu', type=bool, help='Use multi-gpu', default=False)
+    parser.add_argument('--checkpoint', type=str, help='Path to the checkpoint', default='')
     args = parser.parse_args()
     torch.set_float32_matmul_precision('high')
     train(args=args)

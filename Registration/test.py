@@ -4,9 +4,11 @@ import torch
 import monai
 import argparse
 import numpy as np
-import torchio as tio
+
 from monai.metrics import DiceMetric
 sys.path.insert(0, ".")
+sys.path.insert(1, "..")
+import torchio2 as tio
 from dataset import PairwiseSubjectsDataset
 from utils import get_cuda_is_available_or_cpu
 from registration_module import RegistrationModule, RegistrationModuleSVF
@@ -25,8 +27,8 @@ def test(arguments):
     dataset = PairwiseSubjectsDataset(dataset_path=arguments.csv_path, transform=transforms, age=False)
     subject_inshape = dataset[0]['0']['image'][tio.DATA].shape[1:]
     model = RegistrationModuleSVF(
-        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                strides=(2, 2)), inshape=subject_inshape, int_steps=7).eval().to(device)
+        model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(4, 8, 16, 32),
+                                                strides=(2, 2, 2)), inshape=subject_inshape, int_steps=7).eval().to(device)
     model.load_state_dict(torch.load(arguments.load))
 
     dice_metric = DiceMetric(include_background=True, reduction="none")
