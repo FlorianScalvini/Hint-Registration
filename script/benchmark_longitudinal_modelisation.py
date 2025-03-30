@@ -6,13 +6,13 @@ import argparse
 import numpy as np
 from monai.metrics import DiceMetric
 import matplotlib.pyplot as plt
-
+import torchio as tio
 sys.path.insert(0, ".")
 sys.path.insert(1, "..")
-import torchio2 as tio
-from dataset import subjects_from_csv
-from Registration import  RegistrationModuleSVF
-from TemporalTrajectory.LongitudinalDeformation import HadjHamouLongitudinalDeformation, OurLongitudinalDeformation
+
+from src.utils.utils import subjects_from_csv
+from src.modules.registration import  RegistrationModuleSVF
+from src.modules.longitudinal_deformation import HadjHamouLongitudinalDeformation, OurLongitudinalDeformation
 
 
 def _get_transforms(crshape: int | list[int], rshape: int | list[int], num_classes: int):
@@ -34,7 +34,6 @@ def _get_reverse_transform(crshape: int | list[int], rshape: int | list[int], nu
 def _compute_ours(dataset_path: str, model_path: str, crshape: list[int] | int, rshape: list[int] | int, num_classes: int,
                   t0: int, t1: int, device: str, mode: str, model_mlp: str | None = None,
                   mlp_num_layers: str | None = None, mlp_hidden_dim: int | None = None):
-
     model = OurLongitudinalDeformation(
         t0=t0,
         t1=t1,
@@ -43,8 +42,8 @@ def _compute_ours(dataset_path: str, model_path: str, crshape: list[int] | int, 
         hidden_dim=mlp_hidden_dim,
         reg_model=RegistrationModuleSVF(
             int_steps=7,
-            model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                    strides=(2, 2)), inshape=(rshape, rshape, rshape))
+            model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3,
+                                                    channels=(8, 16, 32),strides=(2, 2)))
     )
 
     if mode == 'mlp' and model_mlp is not None:
@@ -92,13 +91,12 @@ def _compute_hadj(dataset_path: str, model_path: str, crshape: int | list[int], 
     model = HadjHamouLongitudinalDeformation(
         t0=t0,
         t1=t1,
-        device=device,
         reg_model=RegistrationModuleSVF(
             int_steps=7,
             model=monai.networks.nets.AttentionUnet(spatial_dims=3, in_channels=2, out_channels=3, channels=(8, 16, 32),
-                                                    strides=(2, 2)), inshape=(rshape, rshape, rshape))
-    )
-    model.loads(model_path).eval().to(device)
+                                                    strides=(2, 2)))
+    ).eval().to(device)
+    model.load_model(model_path)
 
     transforms = _get_transforms(crshape=crshape, rshape=rshape, num_classes=num_classes)
     subjects_list = subjects_from_csv(dataset_path=dataset_path, lambda_age=lambda x: (x -t0) / (t1 - t0))

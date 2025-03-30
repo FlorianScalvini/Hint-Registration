@@ -1,6 +1,6 @@
 import csv
+import sys
 import ants
-import json
 import torch
 import monai
 import argparse
@@ -9,10 +9,37 @@ import pandas as pd
 import torchio2 as tio
 import matplotlib.pyplot as plt
 from monai.metrics import DiceMetric
-from dataset import WrappedSubjectDataset
-from Registration.inference import inference
-from Registration.Others.uniGradIcon.main import UniGradIcon
-from Registration import RegistrationModule, RegistrationModuleSVF
+
+sys.path.insert(0, ".")
+sys.path.insert(1, "..")
+
+from src.utils.utils import subjects_from_csv
+from src.predict_registration import inference
+from Others.gradicon import GradIcon
+from src.modules.registration import RegistrationModule, RegistrationModuleSVF
+
+
+class WrappedSubjectDataset(tio.SubjectsDataset):
+    '''
+        Torch dataset that return a subject
+        Args:
+            dataset_path: path to the csv file (First column should be the path to the image, second column the path to the label and third column the age)
+            transform: transformation to apply to the data
+            lambda_age: function to apply to the age
+    '''
+    def __init__(self, dataset_path: str, transform: tio.Compose | None, lambda_age=None):
+        if lambda_age is None:
+            lambda_age = lambda x: x
+        subjects = subjects_from_csv(dataset_path=dataset_path, age=True, lambda_age=lambda_age)
+        super().__init__(subjects, transform=transform)
+        self.num_subjects = len(subjects)
+
+    def __len__(self) -> int:
+        return tio.SubjectsDataset.__len__(self)
+
+    def __getitem__(self, idx) -> tio.Subject:
+        return tio.SubjectsDataset.__getitem__(self, idx)
+
 
 def _get_transforms(crshape, rshape, num_classes):
     return tio.Compose([
@@ -70,7 +97,7 @@ def _compute_unigradicon(dataset_path, source_image_path, source_label_path, dev
     transform = _get_transforms(crshape=(180, 221, 180), rshape=(175, 175, 175), num_classes=num_classes)
     reverse_transform = _get_reverse_transform(crshape=source_subject["image"][tio.DATA].shape[1:], rshape=(180, 221, 180), num_classes=num_classes)
     targets = WrappedSubjectDataset(dataset_path=dataset_path, transform=None)
-    model = UniGradIcon()
+    model = GradIcon("unigradicon")
     return _compute_registration_dice_between_source_and_targets(model=model, targets=targets, source_subject=source_subject,
                                                                  transform=transform, reverse_transform=reverse_transform,
                                                                  device=device)
@@ -150,7 +177,7 @@ if __name__ == "__main__":
     parser.add_argument('--voxelmorph', type=bool, help='Voxelmorph-like benchmark', required=False, default=True)
     parser.add_argument('--source', type=str, help='Path to the source image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/structural/t2-t21.00.nii.gz")
     parser.add_argument('--source_label', type=str, help='Path to the source image', required=False, default="/home/florian/Documents/Dataset/template_dHCP/fetal_brain_mri_atlas/parcellations/tissue-t21.00_dhcp-19.nii.gz")
-    parser.add_argument('--target', type=str, help='Path to the target images/labels', required=False, default="/home/florian/Documents/Programs/Hint-Registration/data/dHCP/dataset.csv")
+    parser.add_argument('--target', type=str, help='Path to the target images/labels', required=False, default="/home/florian/Documents/Programs/Hint-Registration/data/dHCP/subjects_dataset.csv")
     parser.add_argument('--num_classes', type=int, help='Number of classes', required=False, default=20)
     # Paramaters for Voxelmorph-like method
     parser.add_argument('--load', type=str, help='VoxelMorph-like network model path', required=False, default="/home/florian/Documents/Programs/Hint-Registration/Registration/Results/version_76/last_model.pth")
