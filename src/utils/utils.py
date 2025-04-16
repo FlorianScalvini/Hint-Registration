@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Callable, List
 import torchio as tio
+import datetime
 
 def normalize_to_0_1(volume):
     '''
@@ -44,7 +45,7 @@ def subjects_from_csv(dataset_path: str, age=True, lambda_age: Callable = lambda
     return subjects
 
 
-def create_new_versioned_directory(base_name='./version', start_version=0):
+def create_new_versioned_directory(base_name='', start_version=0):
     '''
         Create a new versioned directory
     '''
@@ -60,7 +61,7 @@ def create_new_versioned_directory(base_name='./version', start_version=0):
 
 def write_namespace_arguments(args, log_file='args_log.json'):
     log_entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "arguments": vars(args)
     }
 
@@ -143,13 +144,5 @@ def get_activation_from_string(activation):
         return torch.nn.Softmin
     elif activation == 'Softmax2d':
         return torch.nn.Softmax2d
-    else:
-        return None
-
-def get_model_from_string(model_name):
-    if model_name == 'Unet':
-        return monai.networks.nets.Unet
-    elif model_name == 'AttentionUnet':
-        return monai.networks.nets.AttentionUnet
     else:
         return None

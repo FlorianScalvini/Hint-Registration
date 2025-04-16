@@ -14,7 +14,8 @@ class LongitudinalDataModule(pl.LightningDataModule):
                  rsize: int | tuple[int, int, int],
                  csize: int | tuple[int, int, int],
                  batch_size: int = 1,
-                 num_workers: int = 8):
+                 num_workers: int = 8,
+                 num_classes: int = 20):
         """
         Data module for longitudinal registration task.
         :param data_dir: Path to the CSV file containing image and label paths.
@@ -24,6 +25,7 @@ class LongitudinalDataModule(pl.LightningDataModule):
         :param csize: Crop or pad the image to this size before resizing.
         :param batch_size: Batch size for training.
         :param num_workers: Number of workers for data loading.
+        :param num_classes: Number of classes for segmentation.
         """
         super().__init__()
         self.data_dir = data_dir
@@ -37,6 +39,7 @@ class LongitudinalDataModule(pl.LightningDataModule):
         self.val_subjects = None
         self.test_subjects = None
         self.seed = None
+        self.num_classes = num_classes
 
     def prepare_data(self):
         """Download or prepare data (if needed)."""
@@ -60,14 +63,10 @@ class LongitudinalDataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> tio.SubjectsLoader:
         transform = transforms.Compose([
-            tio.RandomFlip(axes=('LR')),
-            tio.RandomBlur(std=(0, 0.5)),
-            tio.RandomGamma(log_gamma=(-0.3, 0.3)),
-            tio.RandomNoise(std=(0, 0.5)),
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
             tio.ZNormalization(masking_method=tio.ZNormalization.mean),
-            tio.OneHot(20),
+            tio.OneHot(self.num_classes),
         ])
         train_dataset = LongitudinalSubjectDataset(self.train_subjects, transform=transform)
         return tio.SubjectsLoader(train_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
@@ -77,7 +76,7 @@ class LongitudinalDataModule(pl.LightningDataModule):
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
             tio.ZNormalization(masking_method=tio.ZNormalization.mean),
-            tio.OneHot(20),
+            tio.OneHot(self.num_classes),
         ])
         val_dataset = LongitudinalSubjectDataset(self.val_subjects, transform=transform)
         return tio.SubjectsLoader(val_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
@@ -87,7 +86,7 @@ class LongitudinalDataModule(pl.LightningDataModule):
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
             tio.ZNormalization(masking_method=tio.ZNormalization.mean),
-            tio.OneHot(20),
+            tio.OneHot(self.num_classes),
         ])
         test_dataset = LongitudinalSubjectDataset(self.test_subjects, transform=transform)
         return tio.SubjectsLoader(test_dataset, batch_size=self.batch_size, num_workers=self.num_workers)

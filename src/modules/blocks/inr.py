@@ -3,11 +3,16 @@ import torch.nn as nn
 from .mlp import MLP
 
 
-def positional_encoding_3d(positions, max_freq=10):
+def positional_encoding_3d(coords: torch.Tensor, max_freq: int = 10) -> torch.Tensor:
+    '''
+    Positional encoding for 3D coordinates.
+    :param coords: Coordinates to encode
+    :param max_freq: Maximum frequency for encoding
+    '''
     encoded_positions = []
     freqs = 2 ** torch.arange(max_freq, dtype=torch.float32)
-    for i in range(positions.shape[1]):
-        pos = positions[:, i:i + 1]
+    for i in range(coords.shape[1]):
+        pos = coords[:, i:i + 1]
         encoded = []
         for freq in freqs:
             encoded.append(torch.sin(pos * freq))
@@ -16,15 +21,15 @@ def positional_encoding_3d(positions, max_freq=10):
     return torch.cat(encoded_positions, dim=-1)
 
 class ImplicitNeuralNetwork(nn.Module):
-    def __init__(self, size : list[int], hidden_dim=32, num_layers=4, max_freq=10):
+    def __init__(self, size : list[int], hidden_dim=32, max_freq=10):
         super(ImplicitNeuralNetwork, self).__init__()
         self.max_freq = max_freq
         self.size = size
-        self.model = MLP(input_dim=(len(size) + 1) * self.max_freq * 2, output_dim=1, hidden_dim=hidden_dim, num_layers=num_layers)
+        self.model = MLP(input_dim=(len(size) + 1) * self.max_freq * 2, output_dim=1, hidden_dim=hidden_dim)
         ranges = [torch.linspace(0, s - 1, s) for s in size]
         grids = torch.meshgrid(*ranges)
         coords = torch.stack([grid.flatten() for grid in grids], dim=-1)
-        self.encoded_coords = positional_encoding_3d(coords, max_freq=self.max_freq)
+        self.encoded_coords = positional_encoding_3d(coords=coords, max_freq=self.max_freq)
 
 
     def forward(self, x):

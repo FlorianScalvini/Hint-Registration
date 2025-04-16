@@ -23,7 +23,7 @@ class PairwiseSubjectsDataset(tio.SubjectsDataset):
         '''
             Return the number of subjects in the dataset
         '''
-        return len(self.all_pair * 2)
+        return len(self.all_pair)
 
     def __getitem__(self, idx: int) -> dict[str, tio.Subject]:
         '''
@@ -60,9 +60,10 @@ class RandomPairwiseSubjectsDataset(tio.SubjectsDataset):
             Get a random pair of subjects for the subject at index idx.
             :param idx: index of the pair of subjects
         '''
-        idx_pair = random.randint(0, len(self._subjects) - 1)
+        while (rand := random.randint(0, len(self._subjects) - 1)) == idx:
+            pass
         subject_pair = {
             str(0): tio.SubjectsDataset.__getitem__(self, idx),
-            str(1): tio.SubjectsDataset.__getitem__(self, idx_pair)
+            str(1): tio.SubjectsDataset.__getitem__(self, rand)
         }
         return subject_pair

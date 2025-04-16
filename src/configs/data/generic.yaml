@@ -1,0 +1,8 @@
+csv_path: /home/florian/Documents/Programs/Hint-Registration/dataset/Gholipour/dataset.csv
+t0: null
+t1: null
+batch_size: 1
+num_workers: 8
+csize: [128, 128, 128]
+rsize: [128, 128, 128]
+num_classes: 20

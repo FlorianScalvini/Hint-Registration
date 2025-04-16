@@ -1,4 +1,4 @@
-from .registration.registration_datamodule import RegistrationDataModule
+from .registration.pairwise_registration_datamodule import PairwiseRegistrationDataModule
 from .registration.pairwise_dataset import PairwiseSubjectsDataset, RandomPairwiseSubjectsDataset
 from .longitudinal.longitudinal_dataset import LongitudinalSubjectDataset
 from .longitudinal.longitudinal_datamodule import LongitudinalDataModule

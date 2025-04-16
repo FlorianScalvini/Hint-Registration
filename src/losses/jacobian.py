@@ -39,6 +39,34 @@ def determinant_jacobian(u: torch.Tensor, spacing: Union[list[int], tuple[int]])
     return torch.linalg.det(calculate_jacobian(u, spacing))
 
 
+def jacobian_determinant_3d(deformed_grid: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the determinant of the Jacobian numerically, given the deformed
+    output grid and returns the percentage of negative values
+
+    Args:
+        deformed_grid (torch.Tensor): [B, D, H, W, 3]
+
+    Returns:
+        torch.Tensor: the percentage of negative determinants
+    """
+    dy = deformed_grid[:, :, 1:, :-1, :-1,] - deformed_grid[:, :, -1, :-1, :-1]
+    dx = deformed_grid[:, :, -1, 1:, :-1] - deformed_grid[:, :, -1, :-1, :-1]
+    dz = deformed_grid[:, :, -1, :-1, 1:] - deformed_grid[:, :, -1, :-1, :-1]
+
+    det0 = dx[:, 0, :, :, :] * (dy[:, 1, :, :, :] * dz[:, 2, :, :, :] - dy[:, 2, :, :, :] * dz[:, 1, :, :, :])
+    det1 = dx[:, 1, :, :, :] * (dy[:, 2, :, :, :] * dz[:, 2, :, :, :] - dy[:, 2, :, :, :] * dz[:, 0, :, :, :])
+    det2 = dx[:, 2, :, :, :] * (dy[:, 0, :, :, :] * dz[:, 1, :, :, :] - dy[:, 1, :, :, :] * dz[:, 0, :, :, :])
+
+    determinants = det0 - det1 + det2
+
+    num_neg_dets = len(determinants[determinants <= 0])
+    total_points = torch.prod(torch.tensor(determinants.size(), device=determinants.device))
+
+    neg_dets_percentage = num_neg_dets * 100 / total_points
+
+    return neg_dets_percentage
+
 
 class Jacobianloss(nn.Module):
     """
@@ -57,5 +85,5 @@ class Jacobianloss(nn.Module):
         Returns:
             torch.Tensor: Jacobian loss value.
         '''
-        return torch.log(determinant_jacobian(x, spacing))**2
+        return (torch.max(-determinant_jacobian(x, spacing), torch.zeros_like(x))**2).sum()
 

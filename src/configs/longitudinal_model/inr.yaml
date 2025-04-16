@@ -1,0 +1,4 @@
+defaults:
+  - default
+mode: "linear"
+hidden_dim: [32, 32, 32]

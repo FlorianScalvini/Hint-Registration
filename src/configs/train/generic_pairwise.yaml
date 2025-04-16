@@ -1,0 +1,16 @@
+module:
+    _target_: train_registration.RegistrationTrainingModule
+max_steps: 15000
+accumulate_grad_batches: 1
+lambda_sim: 0
+lambda_seg: 1.0
+lambda_mag: 0.01
+lambda_grad: 0.5
+lambda_inv: 10
+learning_rate: 0.001
+tensor_cores: false
+batch_size: 1
+checkpoint: ""
+penalize: "v"
+save_dir: 'registration'
+

@@ -1,61 +1,90 @@
-import argparse
-
-import numpy as np
 import torch
+import numpy as np
+from PIL import Image
+import os
+import matplotlib.pyplot as plt
 
 
+def animate_flow_3d(tensors : torch.Tensor, tensors_flow : torch.Tensor, axis: int, save_path: str):
+    os.makedirs('evals/tmp', exist_ok=True)
+    timesteps = tensors.shape[0]
+    for index in range(timesteps):
+        fig, ax = plt.subplots(1, 3, figsize=(16, 4), tight_layout=True)
+        ax[0].set_title('Fixed Image')
+        ax[0].imshow(tensors[:, :, :, :, mid_frame_index].squeeze(0).permute(1, 2, 0).cpu().numpy(), cmap='gray')
+        ax[0].axis('off')
+        ax[1].set_title('Moving Image')
+        ax[1].imshow(Jw[:, :, :, :, mid_frame_index].squeeze(0).permute(1, 2, 0).cpu().numpy(), cmap='gray')
+        ax[1].axis('off')
+        xy = torch.cat([xyz[:, :, :, mid_frame_index, 1].unsqueeze(-1), xyz[:, :, :, mid_frame_index, 2].unsqueeze(-1)],
+                       dim=-1)
+        xy = xy[:, ::down_factor, ::down_factor, :]
+        segs1 = xy[0].cpu().numpy()
+        segs2 = segs1.transpose(1, 0, 2)
+        ax[2].add_collection(LineCollection(segs1))
+        ax[2].add_collection(LineCollection(segs2))
+        ax[2].autoscale()
+        ax[2].set_title('Deformation Grid')
+        ax[2].axis('off')
+        fig.savefig(f'evals/tmp/forward_{index}.png')
+        plt.close()
+
+        fig, ax = plt.subplots(1, 3, figsize=(16, 4), tight_layout=True)
+        ax[0].set_title('Fixed Image')
+        ax[0].imshow(moving_img[:, :, :, :, mid_frame_index].squeeze(0).permute(1, 2, 0).cpu().numpy(), cmap='gray')
+        ax[0].axis('off')
+        ax[1].set_title('Moving Image')
+        ax[1].imshow(Iw[:, :, :, :, mid_frame_index].squeeze(0).permute(1, 2, 0).cpu().numpy(), cmap='gray')
+        ax[1].axis('off')
+        xyr = torch.cat(
+            [xyzr[:, :, :, mid_frame_index, 1].unsqueeze(-1), xyzr[:, :, :, mid_frame_index, 2].unsqueeze(-1)], dim=-1)
+        xyr = xyr[:, ::down_factor, ::down_factor, :]
+        segs1 = xyr[0].cpu().numpy()
+        segs2 = segs1.transpose(1, 0, 2)
+        ax[2].add_collection(LineCollection(segs1))
+        ax[2].add_collection(LineCollection(segs2))
+        ax[2].autoscale()
+        ax[2].set_title('Deformation Grid')
+        ax[2].axis('off')
+        fig.savefig(f'evals/tmp/reverse_{index}.png')
+        plt.close()
+
+    f_images = []
+    r_images = []
+    for index in range(num_frames):
+        f_img = io.imread(f'evals/tmp/forward_{index}.png').astype(np.float32) / 255.
+        r_img = io.imread(f'evals/tmp/reverse_{index}.png').astype(np.float32) / 255.
+        f_images.append(f_img)
+        r_images.append(r_img)
+
+    fig, ax = plt.subplots(figsize=(16, 4))
+    ax.axis('off')
+    im = ax.imshow(f_images[0], cmap='gray', animated=True)
+
+    def update(i):
+        im.set_array(f_images[i])
+
+        return im
+
+    animation_fig = animation.FuncAnimation(fig, update, frames=num_frames, repeat_delay=10)
+    filename = 'forward' if prefix is None else f'{prefix}_forward'
+    animation_fig.save(f'{save_path}/{filename}.gif')
+
+    fig, ax = plt.subplots(figsize=(16, 4))
+    ax.axis('off')
+    im = ax.imshow(r_images[0], cmap='gray', animated=True)
+
+    def update(i):
+        im.set_array(r_images[i])
+
+        return im
+
+    animation_fig = animation.FuncAnimation(fig, update, frames=num_frames, repeat_delay=10)
+    filename = 'reverse' if prefix is None else f'{prefix}_reverse'
+    animation_fig.save(f'{save_path}/{filename}.gif')
+    plt.close()
+    shutil.rmtree('evals/tmp')
 
 
-
-def color_palette_20():
-    return np.array([
-            [0, 0, 0],       # Black
-            [255, 255, 255],  # White
-            [128, 128, 128],  # Bright Red
-            [255, 0, 0],     # Bright Red
-            [0, 255, 0],     # Bright Green
-            [0, 0, 255],     # Bright Blue
-            [255, 255, 0],   # Yellow
-            [0, 255, 255],   # Cyan
-            [255, 0, 255],   # Magenta
-            [128, 0, 0],     # Dark Red
-            [0, 128, 0],     # Dark Green
-            [0, 0, 128],     # Dark Blue
-            [128, 128, 0],   # Olive
-            [128, 0, 128],   # Purple
-            [0, 128, 128],   # Teal
-            [192, 192, 192], # Light Gray
-            [128, 128, 128], # Medium Gray
-            [64, 64, 64],    # Dark Gray
-            [255, 165, 0],   # Orange
-            [75, 0, 130],    # Indigo
-            [255, 192, 203], # Pink
-            [173, 216, 230], # Light Blue
-            [255, 255, 255],  # White
-
-        ], dtype=np.uint8)
-
-# Map labels to RGB colors
-def map_labels_to_colors(label_tensor, color_palette=color_palette_20()):
-    """
-    Convert a 3D label tensor to an RGB tensor using a color palette.
-    Args:
-        label_tensor (torch.Tensor): 3D tensor of shape (D, H, W) with integer labels.
-        color_palette (np.ndarray): Array of shape (num_classes, 3) with RGB values.
-    Returns:
-        torch.Tensor: 4D tensor of shape (3,D, H, W, 3) with RGB values.
-    """
-    label_numpy = label_tensor.numpy()
-    rgb_image = color_palette[label_numpy]
-    return torch.from_numpy(rgb_image)
-
-def seg_map_error(pred_tensor, gt_tensor, dim=0):
-    pred_tensor = pred_tensor.cpu().detach()
-    gt_tensor = gt_tensor.cpu().detach()
-    pred_tensor = torch.argmax(pred_tensor, dim=dim)
-    gt_tensor = torch.argmax(gt_tensor, dim=dim)
-    error_map = torch.zeros(pred_tensor.shape).int()
-    error_map[pred_tensor != gt_tensor] = 1
-    return error_map
 
 

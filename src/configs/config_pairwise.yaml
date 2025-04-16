@@ -1,0 +1,8 @@
+defaults:
+  - data: dhcpatlas
+  - pairwise_model: default
+  - train: pairwise/dhcp
+
+hydra:
+  job:
+    name: registration

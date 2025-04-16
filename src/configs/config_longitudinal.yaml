@@ -1,0 +1,9 @@
+defaults:
+  - data: dhcpatlas
+  - pairwise_model: default
+  - longitudinal_model: mlp
+  - train: longitudinal/dhcp_mlp
+
+hydra:
+  job:
+    name: longitudinal

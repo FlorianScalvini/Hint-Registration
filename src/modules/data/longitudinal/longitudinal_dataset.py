@@ -12,6 +12,7 @@ class LongitudinalSubjectDataset(tio.SubjectsDataset):
         :param transform:
         """
         super().__init__(subjects, transform=transform)
+        self.num_subjects = len(subjects)
 
     def __len__(self) -> int:
         return 1
