@@ -1,10 +1,13 @@
 import pandas as pd
-import torchio as tio
+
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
 from torchvision import transforms
 from .longitudinal_dataset import LongitudinalSubjectDataset
 
+import sys
+sys.path.append('../')
+import torchio2 as tio
 
 class LongitudinalDataModule(pl.LightningDataModule):
     def __init__(self,

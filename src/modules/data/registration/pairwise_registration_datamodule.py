@@ -1,10 +1,14 @@
-import torchio as tio
+
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torchvision import transforms
 import pandas as pd
 import random
 from .pairwise_dataset import RandomPairwiseSubjectsDataset, PairwiseSubjectsDataset
+
+import sys
+sys.path.append('../')
+import torchio2 as tio
 
 class PairwiseRegistrationDataModule(pl.LightningDataModule):
     def __init__(self, data_dir: str,

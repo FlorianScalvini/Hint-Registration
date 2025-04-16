@@ -2,12 +2,14 @@ import os
 import itertools
 import torch
 import torch.nn as nn
-import torchio as tio
 from typing import Union, List
 from .pairwise_registration import PairwiseRegistrationModuleVelocity
 from .blocks.mlp import MLP
 from .blocks.inr import ImplicitNeuralNetwork
 
+import sys
+sys.path.append('../')
+import torchio2 as tio
 
 class LongitudinalDeformation(nn.Module):
     def __init__(self, t0, t1):

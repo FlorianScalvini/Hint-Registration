@@ -3,11 +3,12 @@ import random
 import torch
 import torch.nn as nn
 from torch import Tensor
-import torchio as tio
 import pytorch_lightning as pl
 from losses import PairwiseRegistrationLoss
 from modules.longitudinal_deformation import OurLongitudinalDeformation
 from monai.metrics import DiceMetric
+
+import torchio2 as tio
 
 class LongitudinalTrainingModule(pl.LightningModule):
     '''

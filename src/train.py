@@ -49,7 +49,8 @@ def main(cfg: DictConfig) -> None:
                                                                   learning_rate=cfg.train.learning_rate)
     trainer = pl.Trainer(max_steps=cfg.train.max_steps, precision=32, num_sanity_val_steps=0, logger=tensorboard_logger,
                          callbacks= [ModelCheckpoint(every_n_train_steps=200, dirpath=save_dir, save_last=True)],
-                         check_val_every_n_epoch=50)
+                         check_val_every_n_epoch=50,
+                         accelerator='gpu')
     checkpoint = None
     if cfg.train.checkpoint != "":
         checkpoint = cfg.train.checkpoint
