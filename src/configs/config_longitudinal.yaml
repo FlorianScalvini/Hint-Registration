@@ -1,8 +1,8 @@
 defaults:
   - data: dhcpatlas
   - pairwise_model: default
-  - longitudinal_model: mlp
-  - train: longitudinal/dhcp_mlp
+  - longitudinal_model: linear
+  - train: longitudinal/dhcp_linear
 
 hydra:
   job:
