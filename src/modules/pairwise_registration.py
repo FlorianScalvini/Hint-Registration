@@ -1,48 +1,11 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from monai import networks
+import monai
+import torch.nn.functional as F
+from .registration import  RegistrationModule
 
-
-class PairwiseRegistrationModule(nn.Module):
-    '''
-        Registration module for 3D image registration.yaml with DVF
-    '''
-    def __init__(self, model: nn.Module):
-        '''
-        :param model: nn.Module
-        '''
-        super().__init__()
-        self.model = model # Registration model
-        self.warp_block = networks.blocks.Warp(mode='bilinear', padding_mode='zeros', jitter=False) # Warping block for the registration module
-
-    def forward(self, source: Tensor, target: Tensor) -> Tensor:
-        '''
-            Forward pass of the registration module
-            :param source: Source image
-            :param target: Target image
-            :return: Deformation field
-        '''
-        return self.model(torch.cat([source, target], dim=1))
-
-    def warp(self, tensor: Tensor, f: Tensor) -> Tensor:
-        '''
-            Warp an image by a flow field
-            :param tensor: image
-            :param f: Flow field
-            :return: Warped image
-        '''
-        return self.warp_block(tensor, f)
-
-    def load_network(self, path) -> None:
-        '''
-            Load the network weights
-            :param path: Path to the weights
-        '''
-        self.model.load_state_dict(torch.load(path))
-
-
-class PairwiseRegistrationModuleVelocity(PairwiseRegistrationModule):
+class PairwiseRegistrationModuleVelocity(RegistrationModule):
     '''
         Registration module for 3D image registration.yaml with stationary velocity field
         based on the DVF Registration module
@@ -52,8 +15,17 @@ class PairwiseRegistrationModuleVelocity(PairwiseRegistrationModule):
         :param model: nn.Module
         :param int_steps: int
         '''
-        super().__init__(model=model)
-        self.dvf2ddf = networks.blocks.DVF2DDF(num_steps=int_steps, mode='bilinear', padding_mode='zeros')# Vector integration based on Runge-Kutta method
+        super().__init__()
+        self.model = model
+        self.dvf2ddf = monai.networks.blocks.DVF2DDF(num_steps=int_steps, mode='bilinear', padding_mode='zeros')# Vector integration based on Runge-Kutta method
+
+    def forward(self, data: Tensor) -> Tensor:
+        '''
+            Forward pass of the registration module
+            :param data: Input images
+            :return: Deformation field
+        '''
+        return self.model(data)
 
     def velocity2displacement(self, dvf: Tensor) -> Tensor:
         '''

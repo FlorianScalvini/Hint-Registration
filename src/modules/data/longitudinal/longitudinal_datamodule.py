@@ -68,17 +68,17 @@ class LongitudinalDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method=tio.ZNormalization.mean),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
             tio.OneHot(self.num_classes),
         ])
-        train_dataset = LongitudinalSubjectDataset(self.train_subjects, transform=transform)
+        train_dataset =  LongitudinalSubjectDataset(self.train_subjects, transform=transform)
         return tio.SubjectsLoader(train_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
 
     def val_dataloader(self) -> TRAIN_DATALOADERS:
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method=tio.ZNormalization.mean),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
             tio.OneHot(self.num_classes),
         ])
         val_dataset = LongitudinalSubjectDataset(self.val_subjects, transform=transform)
@@ -88,7 +88,7 @@ class LongitudinalDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method=tio.ZNormalization.mean),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
             tio.OneHot(self.num_classes),
         ])
         test_dataset = LongitudinalSubjectDataset(self.test_subjects, transform=transform)

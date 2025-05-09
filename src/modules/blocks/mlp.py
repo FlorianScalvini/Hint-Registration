@@ -17,8 +17,9 @@ class MLP(nn.Module):
         layers = [nn.Linear(input_dim, hidden_dim[0]), nn.ReLU()]
         for i in range(len(hidden_dim) - 2):
             layers.append(nn.Linear(hidden_dim[i], hidden_dim[i+1]))
-            layers.append(nn.ReLU())
+            layers.append(nn.LeakyReLU())
         layers.append(nn.Linear(hidden_dim[-2], output_dim))
+        layers.append(nn.Hardtanh(min_val=-1.0, max_val=1.0))
         self.model = nn.Sequential(*layers)
         self._initialize_weights()
 

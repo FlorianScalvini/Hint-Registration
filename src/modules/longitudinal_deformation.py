@@ -5,21 +5,20 @@ import torch.nn as nn
 from typing import Union, List
 from .pairwise_registration import PairwiseRegistrationModuleVelocity
 from .blocks.mlp import MLP
-from .blocks.inr import ImplicitNeuralNetwork
+from .blocks.inr import ImplicitNeuralNetwork, time_encoding
+from .registration import RegistrationModule
 
 import sys
 sys.path.append('../')
+sys.path.append('../../')
 import torchio2 as tio
 
-class LongitudinalDeformation(nn.Module):
+
+class LongitudinalDeformation(RegistrationModule):
     def __init__(self, t0, t1):
         super().__init__()
         self.t0 = t0
         self.t1 = t1
-
-    def forward(self, data) -> torch.Tensor:
-        return NotImplemented
-
 
 
 class HadjHamouLongitudinalDeformation(LongitudinalDeformation):
@@ -59,7 +58,7 @@ class HadjHamouLongitudinalDeformation(LongitudinalDeformation):
 
 
 class OurLongitudinalDeformation(LongitudinalDeformation):
-    def __init__(self, reg_model : PairwiseRegistrationModuleVelocity, time_mode: str, t0: int, t1: int,
+    def __init__(self, reg_model : nn.Module, time_mode: str, t0: int, t1: int,
                  hidden_dim: Union[List[int] | None] = None, size: list[int] | None = None, max_freq: int | None = 8):
         '''
         Our longitudinal deformation model
@@ -79,12 +78,11 @@ class OurLongitudinalDeformation(LongitudinalDeformation):
             self.temp_model = MLP(input_dim=1, output_dim=1, hidden_dim=hidden_dim)
         if self.time_mode == 'inr' and hidden_dim is not None:
             self.max_freq = max_freq
-            self.temp_model = ImplicitNeuralNetwork(size=size, hidden_dim=hidden_dim, max_freq=max_freq)
+            self.temp_model = ImplicitNeuralNetwork(inshape=size, hidden_dim=hidden_dim, max_freq=max_freq, out_channels=3)
 
 
-    def forward(self, data : (torch.Tensor, torch.Tensor)) -> torch.Tensor:
-        source, target = data
-        velocity = self.reg_model.forward(source, target)
+    def forward(self, data : torch.Tensor) -> torch.Tensor:
+        velocity = self.reg_model(data)
         return velocity
 
     def encode_time(self, time: torch.Tensor) -> torch.Tensor:
