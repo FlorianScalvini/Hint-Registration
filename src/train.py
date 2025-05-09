@@ -47,7 +47,7 @@ def main(cfg: DictConfig) -> None:
         model.load_state_dict(torch.load(cfg.train.load), strict=False)
     training_module: pl.LightningModule = hydra.utils.instantiate(cfg.train.module, model=model, loss=loss,
                                                                   save_path=save_dir, penalize=cfg.train.penalize,
-                                                                  learning_rate=cfg.train.learning_rate)
+                                                                  learning_rate=cfg.train.learning_rate, lambda_reg=cfg.train.lambda_reg)
     trainer = pl.Trainer(max_steps=cfg.train.max_steps, precision=32, num_sanity_val_steps=0, logger=tensorboard_logger,
                          callbacks= [ModelCheckpoint(every_n_train_steps=200, dirpath=save_dir, save_last=True)],
                          check_val_every_n_epoch=10, gradient_clip_val=1., gradient_clip_algorithm='norm')

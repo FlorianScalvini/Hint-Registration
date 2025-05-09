@@ -3,10 +3,11 @@ defaults:
     - generic_longitudinal
 module:
     _target_: train_longitudinal.LongitudinalTrainingModule
-    num_inter_by_epoch: 4
+    num_inter_by_epoch: 7
 max_steps: 15000
-accumulate_grad_batches: 1
+accumulate_grad_batches: 4
 sim_loss: "mi"
+lambda_reg: 0.1
 lambda_sim: 1.0
 lambda_seg: 5.0
 lambda_mag: 0.1

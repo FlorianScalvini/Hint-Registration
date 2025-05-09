@@ -3,7 +3,6 @@ import random
 
 import monai.losses
 from torch import Tensor
-import torchio as tio
 import pytorch_lightning as pl
 from losses import PairwiseRegistrationLoss
 from modules.longitudinal_deformation import OurLongitudinalDeformation
@@ -16,14 +15,16 @@ import torch.nn.functional as F
 import losses.similarity
 from typing import Tuple
 from typing import List
-
+import sys
+sys.path.append('../')
+import torchio2 as tio
 
 class LongitudinalTrainingModule(pl.LightningModule):
     '''
         Lightning Module to train a Longitudinal Estimation of Deformation
     '''
     def __init__(self, model: OurLongitudinalDeformation, loss: PairwiseRegistrationLoss, learning_rate: float = 0.001,
-                 save_path: str = "./", num_inter_by_epoch=1, penalize: str = 'v'):
+                 save_path: str = "./", num_inter_by_epoch=1, penalize: str = 'v', lambda_reg: float = 0.05):
         '''
         :param model: Registration model
         :param loss: PairwiseRegistrationLoss function
@@ -44,6 +45,7 @@ class LongitudinalTrainingModule(pl.LightningModule):
         self.loss = losses.GetLoss("lncc")
         self.loss_bend = monai.losses.DiffusionLoss(normalize=True, reduction="mean")
         self.jac_loss = losses.jacobian.Jacobianloss()
+        self.lambda_reg = lambda_reg
 
     def on_train_epoch_start(self) -> None:
         self.model.train()
@@ -110,7 +112,7 @@ class LongitudinalTrainingModule(pl.LightningModule):
             flow_2t_1 = self.model.reg_model.velocity2displacement(((2. * subject['age']) - 1.) * velocity)
             reg_loss += torch.mean((flow_2t_1 - flow_JI) ** 2) + torch.mean((flow_2t_1 - flow_IJ) ** 2)
         seg_loss *= 1
-        reg_loss *= 0.05
+        reg_loss *= self.lambda_reg
         reg_loss_2 *= 0
         loss =  seg_loss + reg_loss + reg_loss_2
         self.log("Global loss", loss, prog_bar=True, on_epoch=True, sync_dist=True)
