@@ -1,6 +1,6 @@
 defaults:
   - data: dhcpatlas
-  - pairwise_model: default
+  - pairwise_model: attention_unet
   - train: pairwise/dhcp
 
 hydra:

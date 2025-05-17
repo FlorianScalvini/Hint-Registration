@@ -63,6 +63,7 @@ def test(args):
     model.reg_model.load_state_dict(torch.load(args.load))
     if args.time_mode == 'mlp':
         model.load_temporal(args.load_mlp)
+    print(model)
     dice_metric = DiceMetric(include_background=True, reduction="none")
     with open(save_path + "/results.csv", mode='w') as file:
         header = ["time", "mDice", "Cortex", "Ventricule", "all"]
@@ -73,7 +74,7 @@ def test(args):
             target_subject_transformed = transforms(target_subject)
             source_image = torch.unsqueeze(source_subject["image"][tio.DATA], 0).to(device)
             source_label = torch.unsqueeze(source_subject["label"][tio.DATA], 0).to(device)
-            velocity = model.forward((source_image, torch.unsqueeze(target_subject_transformed["image"][tio.DATA], 0).to(device).float()))
+            velocity = model.forward(torch.cat([source_image, torch.unsqueeze(target_subject_transformed["image"][tio.DATA], 0).to(device).float()], dim=1))
 
             for subject in subjects_dataset:
                 age = subject['age'] * (args.t1 - args.t0) + args.t0
@@ -123,14 +124,14 @@ if __name__ == '__main__':
     parser.add_argument('--csv', type=str, help='Path to the csv file', default='/home/florian/Documents/Programs/longitudinal-svf/dataset/dHCP/dataset.csv')
     parser.add_argument('--t0', type=int, help='Initial time point', default=21)
     parser.add_argument('--t1', type=int, help='Final time point', default=36)
-    parser.add_argument('--load', type=str, help='Path to the model', default='/home/florian/Documents/Programs/longitudinal-svf/outputs/longitudinal/2025-04-15_22-43-06/last_model_reg.pth')
-    parser.add_argument('--load_mlp', type=str, help='Path to the mlp model', default="/home/florian/Documents/Programs/longitudinal-svf/outputs/longitudinal/2025-04-15_22-43-06/last_model_mlp.pth")
-    parser.add_argument('--rsize', type=int, nargs='+', help='Resize shape', default=[128, 128, 128])
-    parser.add_argument('--csize', type=int, nargs='+', help='Cropsize shape', default=[221, 221, 221])
+    parser.add_argument('--load', type=str, help='Path to the model', default='/home/florian/JeanZay/mlp/Results/version_2/last_model_reg.pth')
+    parser.add_argument('--load_mlp', type=str, help='Path to the mlp model', default="/home/florian/JeanZay/mlp/Results/version_2/last_model_mlp.pth")
+    parser.add_argument('--rsize', type=int, nargs='+', help='Resize shape', default=[192, 224, 192])
+    parser.add_argument('--csize', type=int, nargs='+', help='Cropsize shape', default=[192, 224, 192])
     parser.add_argument('--num_classes', type=int, help='Number of classes', default=20)
     parser.add_argument('--time_mode', type=str, help='SVF Temporal mode', choices={'mlp', 'linear'}, default='mlp')
     parser.add_argument('--save_image', type=bool, help='Save MRI', default=True)
-    parser.add_argument('--mlp_hidden_dim', type=int, help='Hidden size of the MLP model', default=[32,32,32]),
+    parser.add_argument('--mlp_hidden_dim', type=int, help='Hidden size of the MLP model', default=[32,32,32, 32]),
     parser.add_argument('--mlp_num_layers', type=int, help='Number layer of the MLP', default=4),
     args = parser.parse_args()
     test(args=args)

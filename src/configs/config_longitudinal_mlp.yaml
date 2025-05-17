@@ -1,5 +1,8 @@
 defaults:
-  - config_pairwise
+  - data: dhcpatlas
+  - pairwise_model: default
+  - longitudinal_model: mlp
+  - train: longitudinal/dhcp_mlp
 
 hydra:
   run:
@@ -7,3 +10,5 @@ hydra:
   sweep:
     dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
     subdir: version_${hydra.job.num}
+  job:
+    name: longitudinal

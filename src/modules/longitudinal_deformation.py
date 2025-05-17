@@ -2,19 +2,13 @@ import os
 import itertools
 import torch
 import torch.nn as nn
+import torchio as tio
 from typing import Union, List
-from .pairwise_registration import PairwiseRegistrationModuleVelocity
 from .blocks.mlp import MLP
 from .blocks.inr import ImplicitNeuralNetwork, time_encoding
 from .registration import RegistrationModule
 
-import sys
-sys.path.append('../')
-sys.path.append('../../')
-import torchio2 as tio
-
-
-class LongitudinalDeformation(RegistrationModule):
+class LongitudinalDeformation(nn.Module):
     def __init__(self, t0, t1):
         super().__init__()
         self.t0 = t0
@@ -25,7 +19,7 @@ class HadjHamouLongitudinalDeformation(LongitudinalDeformation):
     '''
     Implementation of Hadj-Hamou longitudinal deformation model
     '''
-    def __init__(self, reg_model : PairwiseRegistrationModuleVelocity, t0: int, t1: int):
+    def __init__(self, reg_model : RegistrationModule, t0: int, t1: int):
         '''
         Hadj-Hamou longitudinal deformation model
         :param reg_model: Registration model

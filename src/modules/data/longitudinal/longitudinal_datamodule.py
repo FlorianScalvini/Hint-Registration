@@ -1,13 +1,10 @@
 import pandas as pd
-
+import torchio as tio
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
 from torchvision import transforms
 from .longitudinal_dataset import LongitudinalSubjectDataset
 
-import sys
-sys.path.append('../')
-import torchio2 as tio
 
 class LongitudinalDataModule(pl.LightningDataModule):
     def __init__(self,
@@ -78,8 +75,6 @@ class LongitudinalDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
-            tio.OneHot(self.num_classes),
         ])
         val_dataset = LongitudinalSubjectDataset(self.val_subjects, transform=transform)
         return tio.SubjectsLoader(val_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
@@ -89,7 +84,6 @@ class LongitudinalDataModule(pl.LightningDataModule):
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
             tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
-            tio.OneHot(self.num_classes),
         ])
         test_dataset = LongitudinalSubjectDataset(self.test_subjects, transform=transform)
         return tio.SubjectsLoader(test_dataset, batch_size=self.batch_size, num_workers=self.num_workers)

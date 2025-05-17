@@ -1,8 +1,6 @@
-
+import torchio as tio
 from typing import Sequence
-import sys
-sys.path.append('../')
-import torchio2 as tio
+
 
 class LongitudinalSubjectDataset(tio.SubjectsDataset):
     '''

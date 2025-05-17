@@ -1,11 +1,8 @@
-
+import torchio as tio
 from typing import Sequence
 import random
 import itertools
 
-import sys
-sys.path.append('../')
-import torchio2 as tio
 
 class PairwiseSubjectsDataset(tio.SubjectsDataset):
     '''

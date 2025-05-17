@@ -1,5 +1,5 @@
-_target_: modules.pairwise_registration.PairwiseRegistrationModuleVelocity
-int_steps: 7
+_target_: modules.registration.RegistrationModule
+int_steps: 9
 model:
   _target_: monai.networks.nets.AttentionUnet
   dropout: 0.1

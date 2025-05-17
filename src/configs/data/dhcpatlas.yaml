@@ -3,6 +3,6 @@ defaults:
 csv_path: /home/florian/Documents/Programs/Hint-Registration/dataset/dHCP/dataset.csv
 t0: 21
 t1: 36
-csize: [ 221, 221, 221 ]
-rsize: [ 128, 128, 128 ]
+csize: [ 192, 224, 192 ]
+rsize: [ 192, 224, 192 ]
 

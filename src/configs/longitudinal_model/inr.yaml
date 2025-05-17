@@ -1,4 +1,6 @@
 defaults:
   - default
-mode: "linear"
-hidden_dim: [32, 32, 32]
+mode: "inr"
+hidden_dim: [128, 128, 128]
+max_freq: 8
+

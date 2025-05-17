@@ -1,42 +1,55 @@
 import torch
 import torch.nn as nn
 from typing import Union, Sequence
+import pystrum.pynd.ndutils as nd
+import numpy as np
+import torch.nn.functional as F
 
-def calculate_jacobian(u: torch.Tensor, spacing: Union[Sequence[int], tuple[Sequence[int]]]) -> torch.Tensor:
-    """
-    Calculate the Jacobian of a displacement field.
-    Args:
-        u (torch.Tensor): Displacement field of shape (B, C, D, H, W) or (B, C, H, W).
-        spacing (Union[list[int], tuple[int]]): Spacing of the input image.
-    Returns:
-        torch.Tensor: Jacobian of the displacement field.
-    """
-    B, C, D, H, W = u.shape
-    if C != 3 and C != 2:
-        raise ValueError("Displacement field must be 2D or 3D")
-    jacobians = []
-    for b in range(B):
-        grads = [torch.gradient(u[b, i], spacing=spacing) for i in range(C)]
-        J = torch.stack(
-            [torch.stack([grads[i][j] + (i == j) for j in range(C)], dim=-1) for i in range(C)],
-            dim=-1
-        )
-        jacobians.append(J)
-    return torch.stack(jacobians)
+def Get_Ja(displacement):
+    '''
+    Calculate the Jacobian value at each point of the displacement map having
+    size of b*h*w*d*3 and in the cubic volumn of [-1, 1]^3
+    '''
+    displacement = displacement.squeeze().permute(1, 2, 3, 0)
+    # check inputs
+    volshape = displacement.shape[:-1]
+    nb_dims = len(volshape)
+    assert len(volshape) in (2, 3), 'flow has to be 2D or 3D'
+    # compute grid
+    grid_lst = nd.volsize2ndgrid(volshape)
+    grid = np.stack(grid_lst, len(volshape))
+    # compute gradients
+    J = torch.gradient(displacement + torch.Tensor(grid).to(displacement.device))
 
-def determinant_jacobian(u: torch.Tensor, spacing: Union[list[int], tuple[int]]) -> torch.Tensor:
-    """
-    Compute the determinant of the Jacobian matrix of a displacement field.
+    dx = J[0]
+    dy = J[1]
+    dz = J[2]
 
-    Args:
-        u (torch.Tensor): Displacement field of shape (B, C, D, H, W) for 3D or (B, C, H, W) for 2D.
-        spacing (Union[list[float], tuple[float]]): Voxel spacing in each spatial dimension.
+    # compute jacobian components
+    Jdet0 = dx[..., 0] * (dy[..., 1] * dz[..., 2] - dy[..., 2] * dz[..., 1])
+    Jdet1 = dx[..., 1] * (dy[..., 0] * dz[..., 2] - dy[..., 2] * dz[..., 0])
+    Jdet2 = dx[..., 2] * (dy[..., 0] * dz[..., 1] - dy[..., 1] * dz[..., 0])
 
-    Returns:
-        torch.Tensor: Determinant of the Jacobian matrix with shape (B, D, H, W) for 3D
-                      or (B, H, W) for 2D.
-    """
-    return torch.linalg.det(calculate_jacobian(u, spacing))
+    return Jdet0 - Jdet1 + Jdet2
+
+def compute_jacobian_determinant(J):
+    # Assume J is in normalized coordinates [-1, 1]
+    # Step 1: Normalize from [-1, 1] → [0, 1]
+    J = J + 1          #恢复到0到1
+    J = J / 2.
+    scale_factor = torch.tensor([J.size(1), J.size(2), J.size(3)]).to(J).view(1, 1, 1, 1, 3) * 1.
+    J = J * scale_factor
+
+    dy = J[:, 1:, :-1, :-1, :] - J[:, :-1, :-1, :-1, :]
+    dx = J[:, :-1, 1:, :-1, :] - J[:, :-1, :-1, :-1, :]
+    dz = J[:, :-1, :-1, 1:, :] - J[:, :-1, :-1, :-1, :]
+
+    Jdet0 = dx[:, :, :, :, 0] * (dy[:, :, :, :, 1] * dz[:, :, :, :, 2] - dy[:, :, :, :, 2] * dz[:, :, :, :, 1])
+    Jdet1 = dx[:, :, :, :, 1] * (dy[:, :, :, :, 0] * dz[:, :, :, :, 2] - dy[:, :, :, :, 2] * dz[:, :, :, :, 0])
+    Jdet2 = dx[:, :, :, :, 2] * (dy[:, :, :, :, 0] * dz[:, :, :, :, 1] - dy[:, :, :, :, 1] * dz[:, :, :, :, 0])
+
+    Jdet = Jdet0 - Jdet1 + Jdet2
+    return Jdet
 
 
 def jacobian_determinant_3d(deformed_grid: torch.Tensor) -> torch.Tensor:
@@ -50,22 +63,17 @@ def jacobian_determinant_3d(deformed_grid: torch.Tensor) -> torch.Tensor:
     Returns:
         torch.Tensor: the percentage of negative determinants
     """
-    dy = deformed_grid[:, :, 1:, :-1, :-1,] - deformed_grid[:, :, -1, :-1, :-1]
-    dx = deformed_grid[:, :, -1, 1:, :-1] - deformed_grid[:, :, -1, :-1, :-1]
-    dz = deformed_grid[:, :, -1, :-1, 1:] - deformed_grid[:, :, -1, :-1, :-1]
+    dy = deformed_grid[:, 1:, :-1, :-1, :] - deformed_grid[:, :-1, :-1, :-1, :]
+    dx = deformed_grid[:, :-1, 1:, :-1, :] - deformed_grid[:, :-1, :-1, :-1, :]
+    dz = deformed_grid[:, :-1, :-1, 1:, :] - deformed_grid[:, :-1, :-1, :-1, :]
 
-    det0 = dx[:, 0, :, :, :] * (dy[:, 1, :, :, :] * dz[:, 2, :, :, :] - dy[:, 2, :, :, :] * dz[:, 1, :, :, :])
-    det1 = dx[:, 1, :, :, :] * (dy[:, 2, :, :, :] * dz[:, 2, :, :, :] - dy[:, 2, :, :, :] * dz[:, 0, :, :, :])
-    det2 = dx[:, 2, :, :, :] * (dy[:, 0, :, :, :] * dz[:, 1, :, :, :] - dy[:, 1, :, :, :] * dz[:, 0, :, :, :])
+    det0 = dx[:, :, :, :, 0] * (dy[:, :, :, :, 1] * dz[:, :, :, :, 2] - dy[:, :, :, :, 2] * dz[:, :, :, :, 1])
+    det1 = dx[:, :, :, :, 1] * (dy[:, :, :, :, 0] * dz[:, :, :, :, 2] - dy[:, :, :, :, 2] * dz[:, :, :, :, 0])
+    det2 = dx[:, :, :, :, 2] * (dy[:, :, :, :, 0] * dz[:, :, :, :, 1] - dy[:, :, :, :, 1] * dz[:, :, :, :, 0])
 
     determinants = det0 - det1 + det2
 
-    num_neg_dets = len(determinants[determinants <= 0])
-    total_points = torch.prod(torch.tensor(determinants.size(), device=determinants.device))
-
-    neg_dets_percentage = num_neg_dets * 100 / total_points
-
-    return neg_dets_percentage
+    return determinants
 
 
 class Jacobianloss(nn.Module):
@@ -76,7 +84,7 @@ class Jacobianloss(nn.Module):
     def __init__(self):
         super(Jacobianloss, self).__init__()
 
-    def forward(self, x: torch.Tensor, spacing: Union[list[int], tuple[int]] = (1, 1, 1)) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
         Penalizing Jacobian
         Args:
@@ -85,5 +93,7 @@ class Jacobianloss(nn.Module):
         Returns:
             torch.Tensor: Jacobian loss value.
         '''
-        return (torch.max(-determinant_jacobian(x, spacing), torch.zeros_like(x))**2).sum()
 
+        Jdet = compute_jacobian_determinant(x)
+        Neg_Jac = 0.5 * (torch.abs(Jdet) - Jdet)
+        return torch.sum(Neg_Jac)

@@ -4,7 +4,7 @@ from torch import Tensor
 import monai
 import torch.nn.functional as F
 from .registration import  RegistrationModule
-
+from src.modules.blocks.spatial_transformation import VecInt, SpatialTransformer
 class PairwiseRegistrationModuleVelocity(RegistrationModule):
     '''
         Registration module for 3D image registration.yaml with stationary velocity field
@@ -18,6 +18,8 @@ class PairwiseRegistrationModuleVelocity(RegistrationModule):
         super().__init__()
         self.model = model
         self.dvf2ddf = monai.networks.blocks.DVF2DDF(num_steps=int_steps, mode='bilinear', padding_mode='zeros')# Vector integration based on Runge-Kutta method
+        self.vecint = VecInt(inshape=(192, 224, 192), nsteps=int_steps)
+        self.spatial_transformer = SpatialTransformer(mode='bilinear', size=(192, 224, 192))
 
     def forward(self, data: Tensor) -> Tensor:
         '''

@@ -1,14 +1,10 @@
-
+import torchio as tio
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torchvision import transforms
 import pandas as pd
 import random
 from .pairwise_dataset import RandomPairwiseSubjectsDataset, PairwiseSubjectsDataset
-
-import sys
-sys.path.append('../')
-import torchio2 as tio
 
 class PairwiseRegistrationDataModule(pl.LightningDataModule):
     def __init__(self, data_dir: str,
@@ -64,8 +60,8 @@ class PairwiseRegistrationDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method='label'),
-            tio.OneHot(20),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
+            tio.OneHot(),
         ])
         train_dataset = RandomPairwiseSubjectsDataset(self.train_subjects, transform=transform)
         return tio.SubjectsLoader(train_dataset, batch_size=self.batch_size,
@@ -76,8 +72,7 @@ class PairwiseRegistrationDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method='label'),
-            tio.OneHot(20),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
         ])
         val_dataset = PairwiseSubjectsDataset(self.val_subjects, transform=transform)
         return tio.SubjectsLoader(val_dataset,
@@ -89,8 +84,7 @@ class PairwiseRegistrationDataModule(pl.LightningDataModule):
         transform = transforms.Compose([
             tio.CropOrPad(self.csize),
             tio.Resize(self.rsize),
-            tio.ZNormalization(masking_method='label'),
-            tio.OneHot(20),
+            tio.RescaleIntensity(out_min_max=(0, 1), percentiles=(0.5, 99.5), masking_method='label'),
         ])
         test_dataset = PairwiseSubjectsDataset(self.test_subjects, transform=transform)
         return tio.SubjectsLoader(test_dataset, batch_size=1,

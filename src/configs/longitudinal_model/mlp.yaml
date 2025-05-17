@@ -2,6 +2,6 @@ defaults:
   - default
 
 mode: "mlp"
-hidden_dim: [32, 32, 32]
+hidden_dim: [128, 128, 128, 128]
 
 
